@@ -1,4 +1,4 @@
-class_name GDForth extends Object
+class_name GDForth extends Reference
 
 var MEM = []; var RS = [ 0 ]
 var word = ""; var pos = 0; var INPUT = ""; # This is a queue of input strings
@@ -167,6 +167,7 @@ func RS_under(): return RS[len(RS)-2] # Plan to use this for anon-code
 func IP(): return RS.back()
 func IP_push(val): RS.push_back(val)
 func IP_pop(): return RS.pop_back()
+func instr(): return MEM[IP()]
 func EOI(): return pos >= len(INPUT)
 func EOM(): return IP() >= len(MEM)
 
@@ -175,7 +176,7 @@ func _exit():
 	if typeof(IP()) == TYPE_STRING: mode = IP_pop()
 
 func LIT(): 
-	stack.append(MEM[IP()]); IP_inc()
+	stack.append(instr()); IP_inc()
 
 func p_dup():
 	var tos = stack.pop_back(); stack.push_back(tos); stack.push_back(tos)
@@ -214,7 +215,7 @@ func run():
 		var oldmode = mode
 		var inst
 		if mode == "m_forth":
-			inst= MEM[IP()]
+			inst = instr()
 		call(mode)
 		if oldmode != "m_forth":
 			inst = word
@@ -229,7 +230,7 @@ func interpret(input: String):
 func h_DOCOL(): mode = "m_forth"
 
 func m_head():
-	head = MEM[IP()]
+	head = instr()
 	IP_inc()
 	heads[head].call_func()
 
@@ -237,7 +238,7 @@ func m_forth():
 	if EOM():
 		mode = "stop"
 		return
-	var instr = MEM[IP()]
+	var instr = instr()
 	IP_inc()
 	if typeof(instr) == TYPE_INT: 
 		IP_push(instr); mode = "m_head"; return

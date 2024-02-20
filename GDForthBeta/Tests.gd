@@ -8,7 +8,7 @@ func _init():
 			printraw(m.name, ": ")
 			call(m.name)
 			print()
-	quit()
+	call_deferred('quit')
 
 
 func test_pushing():
