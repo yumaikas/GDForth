@@ -1,5 +1,7 @@
 class_name GDForth extends Reference
 
+const StackFrame = preload("./StackFrame.gd")
+
 var MEM = []; var RS = [ 0 ]
 var word = ""; var pos = 0; var INPUT = ""; # This is a queue of input strings
 var inbox = []
@@ -163,7 +165,6 @@ func _init():
 	interpret(stdlib)
 
 func IP_inc(): RS[len(RS)-1] += 1
-func RS_under(): return RS[len(RS)-2] # Plan to use this for anon-code
 func IP(): return RS.back()
 func IP_push(val): RS.push_back(val)
 func IP_pop(): return RS.pop_back()
