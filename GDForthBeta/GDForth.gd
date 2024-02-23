@@ -2,7 +2,8 @@ class_name GDForth extends Reference
 
 const StackFrame = preload("./StackFrame.gd")
 
-var MEM = []; var RS = [ 0 ]
+var MEM = []; 
+var RS = [] # Add the bottom frame in _init
 var word = ""; var pos = 0; var INPUT = ""; # This is a queue of input strings
 var inbox = []
 
@@ -68,7 +69,7 @@ func _u_push_tos(): _u_push(_pop())
 func _u_pop_tos(): _push(_u_pop())
 func _c_push_tos(): _c_push(_pop())
 func _c_pop_tos(): _push(_c_pop())
-func _printstack(): print(stack)
+func _printstack(): print(stack);
 func _stacklen(): _push(len(stack))
 func _trace_inc(): trace+=1
 func _trace_dec(): trace-=1
@@ -162,19 +163,24 @@ var mode = "m_interpret"
 
 
 func _init():
+	IP_push(StackFrame.new(MEM))
+
 	interpret(stdlib)
 
-func IP_inc(): RS[len(RS)-1] += 1
-func IP(): return RS.back()
-func IP_push(val): RS.push_back(val)
+func IP_inc(): RS.back().inc()
+func IP(): return RS.back().IP
+func IP_push(val, mem=MEM): RS.push_back(StackFrame.new(mem, val))
 func IP_pop(): return RS.pop_back()
-func instr(): return MEM[IP()]
+func instr(): return RS.back().instr()
 func EOI(): return pos >= len(INPUT)
 func EOM(): return IP() >= len(MEM)
 
 func _exit():
 	IP_pop()
-	if typeof(IP()) == TYPE_STRING: mode = IP_pop()
+	if typeof(IP()) == TYPE_STRING: 
+		mode = IP()
+		IP_pop()
+
 
 func LIT(): 
 	stack.append(instr()); IP_inc()
