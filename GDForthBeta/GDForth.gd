@@ -9,16 +9,31 @@ var inbox = []
 
 var trace = 0; var trace_indent
 var stack = []; var util_stack = []; var check_stack = []
+var compile_stack = [MEM]
 var locals = [];
+var constants = {};
 var head; 
+var fatal_err;
 func sfr(name): return funcref(self, name)
+
+func fault(m0, m1="", m2="",m3="", m4="", m5="",m6="",m7="",m8=""):
+	var message = str(m0,m1,m2,m3,m4,m5,m6,m7,m8)
+	print(message)
+	push_error(message)
+	mode="stop"
+	return message
+func hcf(m0, m1="", m2="", m3="", m4="", m5="", m6="", m7="", m8=""):
+	fatal_err = fault(m0,m1,m2,m3,m4,m5,m6,m7,m8)
 	
 var dict = {
 	"clear-stack": sfr("_clearstack"),
 	"stack-size": sfr("_stacklen"),
 	"_s": sfr("_printstack"), "+": sfr("op_add"), "-": sfr("op_sub"),
 	"def[": sfr("def"), "];": sfr("exit_def"),
-	"]": sfr("end_block"),
+	"const": sfr("defconst"), 
+	"[": sfr("begin_block"), "]": sfr("end_block"), "exec": sfr("exec"),
+	"?": sfr("cond_pick"),
+	"?REDO-BLOCK": sfr("reset_block_if"),
 	"LIT": sfr("LIT"), "EXIT": sfr("_exit"),
 	"narray": sfr("_narray"),
 	"n-popmem": sfr("_n_mem"),
@@ -34,27 +49,28 @@ var heads = {
 	"DOCOL": funcref(self, "h_DOCOL")
 }
 
-var IMMEDIATE = { "];": true, "]": true, "][": true, "if[": true }
+var IMMEDIATE = { "];": true, "[": true, "]": true }
 
-var stdlib=  """
+var stdlib = """
 '{  def[ stack-size u< ]; 
 '}  def[ stack-size u> - narray ];
-'{} def[ 0 narray ];
-'dup  def[ { -1 } {} pick-del ];
-'2dup def[ { -1 -2 } {} pick-del ];
-'drop def[ {} { -1 } pick-del ];
-'nip  def[ {} { -2 } pick-del ];
+'{} { } const '{-1} { -1 } const 
+'false 0 1 eq? const 'true 1 1 eq? const
+'{-2} { -2 } const
+'{-1,-1} { -1 -1 } const
+'{-1,-2} { -1 -2 } const
+'{spin-pick} { -1 -3 -2 } const
+'{spin-del} { -1 -1 -1 } const
 
+'dup  def[ {-1} {} pick-del ];
+'2dup def[ {-1,-2} {} pick-del ];
+'spin def[ {spin-pick} {spin-del} pick-del ];
+'drop def[ {} {-1} pick-del ];
+'nip  def[ {} {-2} pick-del ];
+'if def[ [ ] ? exec ]; 'if-else def[ ? exec ]; 
+'while def[ u< [ u> exec ?REDO-BLOCK ] exec ];
 'c-drop def[ c> drop ];
 'c-assert def[ c> dup eq? [[COMPILE-MODE-ASSERT FAILED]] assert ];
-'if[ def[ { 'IF 'IF-ELSE } u< here u< ];
-'][ def[ here u< ];
-"""
-
-var qqq = """
-cond if[ ]
-while[ do various things cond ]
-iterable each[ ]
 """
 
 func _here(): _push(len(MEM))
@@ -78,8 +94,7 @@ func _assert():
 	var msg = _pop()
 	if not _pop(): 
 		mode = "stop"
-		print("Assertion Failed!: ", msg)
-		push_error(msg)
+		hcf("Assertion Failed!: ", msg)
 		return
 
 func _pick_del():
@@ -87,15 +102,16 @@ func _pick_del():
 	var to_del = _pop()
 	var to_add = _pop()
 	for idx in to_add:
-		to_add.append(stack[idx])
+		additions.append(stack[idx])
 	for idx in to_del:
 		stack.pop_at(idx)
 	stack.append_array(additions)
 
-
-
 func _narray(): 
 	var n = _pop()
+	if n == 0:
+		_push([])
+		return
 	var arr = stack.slice(-n, -1)
 	stack.resize(len(stack)-n)
 	stack.append(arr)
@@ -111,34 +127,63 @@ func _print_mem():
 		print(addr,": ", m)
 		addr+=1
 
+func _is_block_RS(maybeBlock):
+	return maybeBlock.MEM != MEM
+
+func _is_block(maybeBlock):
+	return (typeof(maybeBlock) == TYPE_ARRAY 
+		and maybeBlock.front() == "DOCOL" 
+		and maybeBlock.back() == "EXIT")
+
+func exec():
+	var maybeBlock = stack.back()
+	if _is_block(maybeBlock):
+		IP_push(mode)
+		IP_push(0, _pop())
+		mode = "m_head"
+	else:
+		fault("Cannot execute: ", maybeBlock)
+
+func reset_block_if():
+	if RS.back().MEM != MEM:
+		if _pop():
+			RS.back().IP = 1
+	else:
+		hcf("Tried to reset the base block!")
+	pass
+
+func cond_pick():
+	var f_val = _pop()
+	var t_val = _pop()
+	var cond_val = _pop()
+	if cond_val: _push(t_val)
+	else: _push(f_val)
+
+func _eq(a, b): 
+	return typeof(a) == typeof(b) and a == b
+
+func begin_block():
+	# print("BEGIN: ", mode)
+	# print(INPUT)
+	IP_push(mode)
+	mode = "m_compile"
+	compile_stack.push_back(["DOCOL"])
+
 
 func end_block():
-	# TOS should be a MEM address
-	var from = _u_pop()
-	if mode == "m_compile":
-
-		var to_compile = [from]
-		var u = _u_pop()
-		while typeof(u) != TYPE_ARRAY:
-			to_compile.append(u)
-			u = _u_pop()
-
-		if len(to_compile) <= len(u):
-			compile(u[len(to_compile)-1])
-		else:
-			mode = "stop"
-			print("Unable to compile: ", to_compile, u)
-			return
-		compile_many(to_compile)
-
-	elif mode == "m_interpret":
-		print("ERROR", "unble to interpert blocks yet")
-		mode = "stop"
-		return
-		# TOS 
-		pass
+	compile("EXIT")
+	var block = compile_stack.pop_back()
+	mode = IP(); IP_pop()
+	# print("END: ", mode)
+	if trace > 0:
+		print("end_block", mode)
+	if _eq(mode, "m_compile"):
+		compile_many(["LIT", block])
+	elif _eq(mode, "m_interpret"):
+		_push(block)
 	else:
-		mode = "stop"
+		print(INPUT)
+		hcf("Should not encounter block in mode: ", mode)
 		return
 
 func op_eq(): _push(_pop() == _pop())
@@ -163,11 +208,11 @@ var mode = "m_interpret"
 
 
 func _init():
-	IP_push(StackFrame.new(MEM))
-
+	IP_push(StackFrame.new(0,MEM))
 	interpret(stdlib)
 
 func IP_inc(): RS.back().inc()
+func IP_dec(): RS.back().dec()
 func IP(): return RS.back().IP
 func IP_push(val, mem=MEM): RS.push_back(StackFrame.new(mem, val))
 func IP_pop(): return RS.pop_back()
@@ -181,15 +226,11 @@ func _exit():
 		mode = IP()
 		IP_pop()
 
-
 func LIT(): 
 	stack.append(instr()); IP_inc()
 
-func p_dup():
-	var tos = stack.pop_back(); stack.push_back(tos); stack.push_back(tos)
-
-func compile(val): MEM.append(val)
-func compile_many(vals): MEM.append_array(vals)
+func compile(val): compile_stack.back().append(val)
+func compile_many(vals): compile_stack.back().append_array(vals)
 
 func scan_until(charset: String, contains=true):
 	var newPos = pos
@@ -217,13 +258,22 @@ func scan_for_seq(seq: String):
 
 func eat_space(): scan_until(" \t\r\n", false)
 
+var done = true
+func safe_call(method):
+	done = false
+	call(method)
+	done = true
+
+	
 func run(): 
-	while mode != "stop": 
+	while mode != "stop" and not fatal_err: 
 		var oldmode = mode
 		var inst
 		if mode == "m_forth":
 			inst = instr()
-		call(mode)
+		safe_call(mode)
+		if done == false:
+			hcf(mode, " failed!")
 		if oldmode != "m_forth":
 			inst = word
 		if trace > 0:
@@ -232,14 +282,21 @@ func run():
 func interpret(input: String):
 	INPUT = input; pos = 0
 	mode = "m_interpret"
+	# if input != stdlib:
+	# 	print(input)
 	run()
 
-func h_DOCOL(): mode = "m_forth"
+func h_DOCOL(): 
+	mode = "m_forth"
+	# IP_inc()
 
 func m_head():
+	done = false
 	head = instr()
 	IP_inc()
 	heads[head].call_func()
+	done = true
+
 
 func m_forth():
 	if EOM():
@@ -251,8 +308,8 @@ func m_forth():
 		IP_push(instr); mode = "m_head"; return
 	if typeof(instr) == TYPE_STRING:
 		dict[instr].call_func(); return
-	push_error(str("Can't run GDForth instruction: ", instr))
-	mode = "stop"
+	hcf("Can't run GDForth instruction: ", instr)
+	return
 	
 func m_interpret():
 	if EOI():
@@ -264,8 +321,7 @@ func m_interpret():
 	elif interpret_nonprimitive(): pass
 	elif interpret_literal(): pass
 	else:
-		push_error(str("Can't interpret: '", word, "' at: ", pos))
-		mode = "stop"
+		hcf("Can't interpret: '", word, "' at: ", pos)
 		
 func interpret_primitive(): 
 	if dict.has(word) and dict[word] is FuncRef:
@@ -279,6 +335,9 @@ func interpret_nonprimitive():
 		IP_push("m_interpret")
 		IP_push(dict[word])
 		mode = "m_head"
+		return true
+	if constants.has(word):
+		_push(constants[word])
 		return true
 	return false
 
@@ -308,8 +367,7 @@ func m_compile():
 	elif compile_nonimmediate_word(): pass
 	elif compile_literal(): pass
 	else:
-		push_error(str("Cannot compile: ", word))
-		mode = "stop"
+		hcf("Cannot compile: ", word)
 
 func compile_immediate_word():
 	if word and dict.has(word) and IMMEDIATE.has(word):
@@ -319,6 +377,9 @@ func compile_immediate_word():
 			IP_push(mode)
 			IP_push(dict[word])
 			mode = "m_head"
+		return true
+	if word and constants.has(word):
+		compile_many(["LIT", constants[word]])
 		return true
 
 func compile_nonimmediate_word(): 
@@ -344,9 +405,20 @@ func compile_literal():
 
 	return false
 
+func defconst():
+	var _val = _pop()
+	var _key = _pop()
+	constants[_key] = _val
+
 func def():
-	dict[_pop()] = len(MEM)
+	if mode == "m_compile":
+		hcf("Cannot nest word defs!")
+		return
+
+	var name = _pop()
+	dict[name] = len(MEM)
 	compile("DOCOL")
+	#compile(["NAME:", name])
 	mode = "m_compile"
 
 func exit_def():
