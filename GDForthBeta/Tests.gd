@@ -9,7 +9,7 @@ func _init():
 		if m.name.begins_with("test_"):
 			var comp = GDForth.new()
 			printraw(m.name, ": ")
-			call(m.name, comp)
+			callv(m.name, [comp])
 			print()
 			if !comp.done:
 				break
@@ -29,8 +29,8 @@ func test_pushing(comp):
 	comp.interpret("clear-stack 11 23 354")
 	assert_(comp.stack == [11, 23, 354], "Can push bigger integers")
 
-	comp.interpret("1 c< 2 c<")
-	assert_(array_eq(comp.check_stack, [1, 2]), "Can push to check-stack")
+	comp.interpret("1 u< 2 u<")
+	assert_(array_eq(comp.util_stack, [1, 2]), "Can push to check-stack")
 
 func test_compilation(comp):
 	comp.interpret("'one def[ 1 ];")
@@ -68,6 +68,9 @@ func test_looping(comp):
 
 	comp.interpret("1 2 3 [ 1 + false ] while")
 	stack_assert(comp, [1,2,4], "While terminates")
+
+	comp.interpret("0 [ 1+ dup 4 lt? ] while")
+	stack_assert(comp, [4], "Counted While")
 
 
 func stack_assert(comp, matches, msg):

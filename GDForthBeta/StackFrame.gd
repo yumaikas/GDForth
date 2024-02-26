@@ -4,7 +4,13 @@ var MEM
 var IP = 0
 
 func _to_string():
-	return str("SF(", IP, ", ", _len(MEM),")")
+	var ipstr
+	if typeof(IP) == TYPE_ARRAY:
+		ipstr = str("[B/",len(IP),"]")
+	else:
+		ipstr = IP
+
+	return str("SF(", ipstr, ", ", _len(MEM),")")
 
 func _init(mem, ip = 0):
 	MEM = mem

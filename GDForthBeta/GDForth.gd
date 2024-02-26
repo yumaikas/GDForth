@@ -4,41 +4,33 @@ const StackFrame = preload("./StackFrame.gd")
 
 var MEM = []; 
 var RS = [] # Add the bottom frame in _init
-var word = ""; var pos = 0; var INPUT = ""; # This is a queue of input strings
+var word = ""; var pos = 0; var INPUT = ""; # The current input string
 var inbox = []
 
 var trace = 0; var trace_indent
-var stack = []; var util_stack = []; var check_stack = []
-var compile_stack = [MEM]
+var stack = []; var util_stack = []; var compile_stack = [MEM]
 var locals = [];
 var constants = {};
 var head; 
 var fatal_err;
+var mode = "m_interpret"
+
 func sfr(name): return funcref(self, name)
 
-func fault(m0, m1="", m2="",m3="", m4="", m5="",m6="",m7="",m8=""):
-	var message = str(m0,m1,m2,m3,m4,m5,m6,m7,m8)
-	print(message)
-	push_error(message)
-	mode="stop"
-	return message
-func hcf(m0, m1="", m2="", m3="", m4="", m5="", m6="", m7="", m8=""):
-	fatal_err = fault(m0,m1,m2,m3,m4,m5,m6,m7,m8)
 	
 var dict = {
-	"clear-stack": sfr("_clearstack"),
-	"stack-size": sfr("_stacklen"),
-	"_s": sfr("_printstack"), "+": sfr("op_add"), "-": sfr("op_sub"),
+	"clear-stack": sfr("_clearstack"), 
+
+	"stack-size": sfr("_stacklen"), "-": sfr("op_sub"), "narray": sfr("_narray"),
+	"u>": sfr("_u_pop_tos"), "u<": sfr("_u_push_tos"),
+
+	"_s": sfr("_printstack"), "+": sfr("op_add"), 
 	"def[": sfr("def"), "];": sfr("exit_def"),
 	"const": sfr("defconst"), 
 	"[": sfr("begin_block"), "]": sfr("end_block"), "exec": sfr("exec"),
 	"?": sfr("cond_pick"),
 	"?REDO-BLOCK": sfr("reset_block_if"),
 	"LIT": sfr("LIT"), "EXIT": sfr("_exit"),
-	"narray": sfr("_narray"),
-	"n-popmem": sfr("_n_mem"),
-	"u>": sfr("_u_pop_tos"), "u<": sfr("_u_push_tos"),
-	"c>": sfr("_c_pop_tos"), "c<": sfr("_c_push_tos"),
 	"assert": sfr("_assert"),
 	"here": sfr("_here"),
 	"pick-del": sfr("_pick_del"),
@@ -51,6 +43,15 @@ var heads = {
 
 var IMMEDIATE = { "];": true, "[": true, "]": true }
 
+func fault(m0, m1="", m2="",m3="", m4="", m5="",m6="",m7="",m8=""):
+	var message = str(m0,m1,m2,m3,m4,m5,m6,m7,m8)
+	print(message)
+	push_error(message)
+	mode="stop"
+	return message
+func hcf(m0, m1="", m2="", m3="", m4="", m5="", m6="", m7="", m8=""):
+	fatal_err = fault(m0,m1,m2,m3,m4,m5,m6,m7,m8)
+
 var stdlib = """
 '{  def[ stack-size u< ]; 
 '}  def[ stack-size u> - narray ];
@@ -62,15 +63,18 @@ var stdlib = """
 '{spin-pick} { -1 -3 -2 } const
 '{spin-del} { -1 -1 -1 } const
 
+
 'dup  def[ {-1} {} pick-del ];
 '2dup def[ {-1,-2} {} pick-del ];
+'drop def[ {} {-1} pick-del ];
+'1+ def[ 1 + ];
 'spin def[ {spin-pick} {spin-del} pick-del ];
 'drop def[ {} {-1} pick-del ];
 'nip  def[ {} {-2} pick-del ];
-'if def[ [ ] ? exec ]; 'if-else def[ ? exec ]; 
-'while def[ u< [ u> exec ?REDO-BLOCK ] exec ];
-'c-drop def[ c> drop ];
-'c-assert def[ c> dup eq? [[COMPILE-MODE-ASSERT FAILED]] assert ];
+'if def[ [ ] ? exec ]; 'if-else def[ ? exec ]; 'not def[ false true ? ];
+'ucopy def[ u> dup u< ];
+'udrop def[ u> drop ];
+'while def[ u< [ ucopy exec ?REDO-BLOCK udrop ] exec ];
 """
 
 func _here(): _push(len(MEM))
@@ -79,12 +83,8 @@ func _drop(): _pop()
 func _push(val): stack.push_back(val)
 func _u_pop(): return util_stack.pop_back()
 func _u_push(val): util_stack.push_back(val)
-func _c_pop(): return check_stack.pop_back()
-func _c_push(val): check_stack.push_back(val)
 func _u_push_tos(): _u_push(_pop())
 func _u_pop_tos(): _push(_u_pop())
-func _c_push_tos(): _c_push(_pop())
-func _c_pop_tos(): _push(_c_pop())
 func _printstack(): print(stack);
 func _stacklen(): _push(len(stack))
 func _trace_inc(): trace+=1
@@ -115,11 +115,6 @@ func _narray():
 	var arr = stack.slice(-n, -1)
 	stack.resize(len(stack)-n)
 	stack.append(arr)
-
-func _n_mem():
-	var n = _pop()
-	stack.append_array(MEM.slice(len(MEM)-n))
-	MEM.resize(len(MEM)-n)
 
 func _print_mem():
 	var addr = 0
@@ -181,6 +176,8 @@ func end_block():
 		compile_many(["LIT", block])
 	elif _eq(mode, "m_interpret"):
 		_push(block)
+	elif _eq(mode, MEM):
+		hcf("unmatched ']' !")
 	else:
 		print(INPUT)
 		hcf("Should not encounter block in mode: ", mode)
@@ -195,17 +192,6 @@ func op_sub():
 	var b = _pop(); var a = _pop(); _push(a - b)
 
 func _clearstack(): stack.clear()
-
-
-var mode = "m_interpret"
-# Modes: m_interpret, m_compile, m_head, m_forth, m_eval stop
-
-
-# Ways to handle blocks/quotes
-# if end
-# while end
-# each end
-
 
 func _init():
 	IP_push(StackFrame.new(0,MEM))
@@ -417,8 +403,7 @@ func def():
 
 	var name = _pop()
 	dict[name] = len(MEM)
-	compile("DOCOL")
-	#compile(["NAME:", name])
+	compile("DOCOL") #compile(["NAME:", name])
 	mode = "m_compile"
 
 func exit_def():
