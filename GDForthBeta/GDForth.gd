@@ -11,36 +11,12 @@ var trace = 0; var trace_indent
 var stack = []; var util_stack = []; var compile_stack = [MEM]
 var locals = [];
 var constants = {};
-var head; 
-var fatal_err;
+var head; var fatal_err;
 var mode = "m_interpret"
 
 func sfr(name): return funcref(self, name)
-
 	
-var dict = {
-	"clear-stack": sfr("_clearstack"), 
-
-	"stack-size": sfr("_stacklen"), "-": sfr("op_sub"), "narray": sfr("_narray"),
-	"u>": sfr("_u_pop_tos"), "u<": sfr("_u_push_tos"),
-
-	"_s": sfr("_printstack"), "+": sfr("op_add"), 
-	"def[": sfr("def"), "];": sfr("exit_def"),
-	"const": sfr("defconst"), 
-	"[": sfr("begin_block"), "]": sfr("end_block"), "exec": sfr("exec"),
-	"?": sfr("cond_pick"),
-	"?REDO-BLOCK": sfr("reset_block_if"),
-	"LIT": sfr("LIT"), "EXIT": sfr("_exit"),
-	"assert": sfr("_assert"),
-	"here": sfr("_here"),
-	"pick-del": sfr("_pick_del"),
-	"eq?": sfr("op_eq"), "lt?": sfr("op_lt"), "gt?": sfr("op_gt"),
-	"+trace": sfr("_trace_inc"), "-trace": sfr("_trace_dec"),
-}; 
-var heads = {
-	"DOCOL": funcref(self, "h_DOCOL")
-}
-
+var dict = { "&": sfr("mapfn") }; var heads = { "DOCOL": funcref(self, "h_DOCOL") }
 var IMMEDIATE = { "];": true, "[": true, "]": true }
 
 func fault(m0, m1="", m2="",m3="", m4="", m5="",m6="",m7="",m8=""):
@@ -49,20 +25,32 @@ func fault(m0, m1="", m2="",m3="", m4="", m5="",m6="",m7="",m8=""):
 	push_error(message)
 	mode="stop"
 	return message
+
 func hcf(m0, m1="", m2="", m3="", m4="", m5="", m6="", m7="", m8=""):
 	fatal_err = fault(m0,m1,m2,m3,m4,m5,m6,m7,m8)
 
 var stdlib = """
-'{  def[ stack-size u< ]; 
-'}  def[ stack-size u> - narray ];
-'{} { } const '{-1} { -1 } const 
-'false 0 1 eq? const 'true 1 1 eq? const
-'{-2} { -2 } const
-'{-1,-1} { -1 -1 } const
-'{-1,-2} { -1 -2 } const
-'{spin-pick} { -1 -3 -2 } const
-'{spin-del} { -1 -1 -1 } const
+'clear-stack '_clearstack & 'stack-size '_stacklen & 
+'u> '_u_pop_tos & 'u< '_u_push_tos & 'call-method 'call_method &
+'LIT 'LIT & 'EXIT '_exit & '?REDO-BLOCK 'reset_block_if &
+'? 'cond_pick & '[ 'begin_block & '] 'end_block & 'exec 'exec &
+'def[ 'def & ']; 'exit_def & 'const 'defconst &  
+'here '_here & 'assert '_assert &  
+'eq? 'op_eq & 'lt? 'op_lt & 'gt? 'op_gt &
+'narray '_narray & '+ 'op_add & '- 'op_sub & 
+'+trace '_trace_inc & '-trace '_trace_dec &
+'pick-del '_pick_del & '_s '_printstack &
 
+'{  def[ stack-size u< ]; '}  def[ stack-size u> - narray ];
+
+'false 0 1 eq? const 'true 1 1 eq? const
+
+'{} { } const '{-1} { -1 } const '{-2} { -2 } const
+'{-1,-1} { -1 -1 } const '{-1,-2} { -1 -2 } const
+'{spin-pick} { -1 -3 -2 } const '{spin-del} { -1 -1 -1 } const
+
+'[] [ ] const
+'if def[ [] ? exec ]; 'if-else def[ ? exec ];
 
 'dup  def[ {-1} {} pick-del ];
 '2dup def[ {-1,-2} {} pick-del ];
@@ -71,7 +59,7 @@ var stdlib = """
 'spin def[ {spin-pick} {spin-del} pick-del ];
 'drop def[ {} {-1} pick-del ];
 'nip  def[ {} {-2} pick-del ];
-'if def[ [ ] ? exec ]; 'if-else def[ ? exec ]; 'not def[ false true ? ];
+'not def[ false true ? ];
 'ucopy def[ u> dup u< ];
 'udrop def[ u> drop ];
 'while def[ u< [ ucopy exec ?REDO-BLOCK udrop ] exec ];
@@ -154,8 +142,6 @@ func cond_pick():
 	if cond_val: _push(t_val)
 	else: _push(f_val)
 
-func _eq(a, b): 
-	return typeof(a) == typeof(b) and a == b
 
 func begin_block():
 	# print("BEGIN: ", mode)
@@ -183,13 +169,15 @@ func end_block():
 		hcf("Should not encounter block in mode: ", mode)
 		return
 
-func op_eq(): _push(_pop() == _pop())
+func op_eq(): _push(_eq(_pop(), _pop()))
 func op_gt(): _push(_pop() < _pop())
 func op_lt(): _push(_pop() > _pop())
 func op_add():
 	var b = _pop(); var a = _pop(); _push(a + b)
 func op_sub():
 	var b = _pop(); var a = _pop(); _push(a - b)
+func _eq(a, b): 
+	return typeof(a) == typeof(b) and a == b
 
 func _clearstack(): stack.clear()
 
@@ -249,7 +237,6 @@ func safe_call(method):
 	done = false
 	call(method)
 	done = true
-
 	
 func run(): 
 	while mode != "stop" and not fatal_err: 
@@ -282,7 +269,6 @@ func m_head():
 	IP_inc()
 	heads[head].call_func()
 	done = true
-
 
 func m_forth():
 	if EOM():
@@ -391,6 +377,12 @@ func compile_literal():
 
 	return false
 
+func mapfn():
+	var _val = _pop()
+	var _key = _pop()
+
+	dict[_key] = sfr(_val)
+
 func defconst():
 	var _val = _pop()
 	var _key = _pop()
@@ -410,4 +402,33 @@ func exit_def():
 	compile("EXIT")
 	mode = "m_interpret"
 
+func call_method(push_nulls=false):
+	var on = _pop(); var name = _pop(); var margs = _pop().duplicate()
+	print(on, name, margs, push_nulls)
+	_dispatch(on, name, margs, push_nulls)
 
+const argNames = ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"]
+
+func _dispatch(on, name, margs, push_nulls = false):
+	if typeof(on) == TYPE_OBJECT:
+		var fn = funcref(on, name)
+		var ret = fn.call_funcv(margs)
+		on.callv(name, margs)
+		if ret != null or push_nulls:
+			_push(ret)
+	else:
+		var expr = Expression.new()
+		var anames = argNames.slice(0, len(margs))
+		anames.append("m")
+		var toParse = str("m.", name,"(", ", ".join(anames), ")")
+		if expr.parse(toParse, anames) != OK:
+			hcf("Unable to parse: ", toParse, anames, " as an expression")
+			return
+
+		margs.append(on)
+		if trace > 0:
+			print(toParse, anames, margs)
+		var ret = expr.execute(margs)
+
+		if ret != null or push_nulls:
+			_push(ret)
