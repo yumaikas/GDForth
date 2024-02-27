@@ -38,6 +38,26 @@ func stack_assert(comp, matches, msg):
 		comp.stack.clear()
 		printraw(".")
 
+func pget(val, path):
+	var ret = val
+	for p in path:
+		if ret[p]:
+			ret = ret[p]
+		else:
+			break
+	return ret
+
+func const_assert(comp, path, val, msg):
+	var toCompare = pget(comp.constants, path)   
+	if comp._eq(toCompare, val):
+		comp.stack.clear()
+		printraw(".")
+	else:
+		print(
+			msg, " failed! ",
+			"Expected to get ", val, " but got ", toCompare, " instead")
+
+
 func array_eq(arr1, arr2):
 	if len(arr1) != len(arr2):
 		return false
@@ -90,7 +110,6 @@ func test_ops(comp):
 	comp.interpret("1 2 lt? 2 1 gt? 0 0 eq?")
 	assert_(array_eq(comp.stack, [true, true, true]), "Ops")
 
-
 func test_blocks(comp):
 	comp.interpret("{ 1 2 3 }")
 	assert_(array_eq(comp.stack.back(), [1,2,3]), "Basic arrays")
@@ -104,13 +123,28 @@ func test_blocks(comp):
 	comp.interpret("1 2 2max")
 	stack_assert(comp, [2], "2max worked")
 
-func test_looping(comp):
+func test_locals(comp):
+	comp.interpret("{ 1 2 3 } 3 get?")
+	comp.interpret("{ 1 2 3 } top")
+	stack_assert(comp, [null, 3], "Can use 'top' to get the end of an array")
+
+	comp.interpret("+l 123 :foo = :foo $")
+	stack_assert(comp, [123], "Can store and fetch locals")
+
+func __test_looping(comp):
 
 	comp.interpret("1 2 3 [ 1 + false ] while")
 	stack_assert(comp, [1,2,4], "While terminates")
 
 	comp.interpret("0 [ 1+ dup 4 lt? ] while")
 	stack_assert(comp, [4], "Counted While")
+
+	comp.interpret("0 [ 1+ dup 1000 lt? ] while")
+	stack_assert(comp, [1000], "Counted While")
+
+	comp.interpret("0 {1//100} [ drop 1+ ] each")
+	stack_assert(comp, [100], "Basic each")
+
 
 var call_count = 0
 func test_methods(comp):

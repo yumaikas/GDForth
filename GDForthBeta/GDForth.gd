@@ -1,14 +1,12 @@
 class_name GDForth extends Reference
 
-const StackFrame = preload("./StackFrame.gd")
-
 var MEM = []; var RS = [] # Add the bottom frame in _init
 var word = ""; var pos = 0; var INPUT = ""; # The current input string
 var inbox = []
 
 var trace = 0;  var trace_modes = ["mode", "instr", "stacklen", "pos"]; var trace_indent; var trace_stack = []
 var stack = []; var compile_stack = [MEM]
-var locals = []; var constants = {};
+var locals = []; var constants = { "TYPE_ARRAY": TYPE_ARRAY, "TYPE_DICTIONARY": TYPE_DICTIONARY };
 var head; var fatal_err;
 var mode = "m_interpret"
 
@@ -29,17 +27,17 @@ func vm(): _push(self)
 func hcf(m0, m1="", m2="", m3="", m4="", m5="", m6="", m7="", m8=""):
 	fatal_err = fault(m0,m1,m2,m3,m4,m5,m6,m7,m8)
 
-# :const :defconst &  
 var stdlib = """
-:VM :vm & :get :dget & :put :dput & :<dict> :newdict &
+:VM :vm & :get? :dget & :put :dput & :<dict> :newdict & :range :_range &
 :clear-stack :_clearstack & :stack-size :_stacklen & 
+:call-method-no-args :call_method_noargs & :() :call_method_noargs &
 :call-method :call_method & :LIT :LIT & :EXIT :_exit & :?REDO-BLOCK :reset_block_if &
 :? :cond_pick & :[ :begin_block & :] :end_block & :exec :exec &
-:def[ :def & :]; :exit_def & 
-:here :_here & :assert :_assert &  
+:typeof :_typeof &
+:def[ :def & :]; :exit_def & :assert :_assert &  
 :eq? :op_eq & :lt? :op_lt & :gt? :op_gt &
 :narray :_narray & :+ :op_add & :- :op_sub & 
-:pick-del :_pick_del & :_s :_printstack &
+:pick-del :_pick_del & :_s :_printstack & :iter :iter_of &
 :+trace  :_trace_inc & :-trace :_trace_dec & :untrace :_untrace & :retrace :_retrace &
 
 :<arr> def[ 0 narray ]; :box def[ 1 narray ]; :pair def[ 2 narray ]; :triple def[ 3 narray ];
@@ -51,16 +49,26 @@ var stdlib = """
 :u< def[ untrace 1 narray util-stack :append call-method retrace ]; 
 :u> def[ untrace 0 narray util-stack :pop_back call-method retrace ];
 
+
 :{  def[ stack-size u< ]; :}  def[ stack-size u> - narray ];
 :{} <arr> const :{-1} -1 box const :{-2} -2 box const
+:null {} 1 get? const
 
 :1+ def[ 1 + ]; :1- def[ 1 - ]; :nom def[ u> 1- u< ];
 :( def[ u< u< { ]; :) def[ } u> u> call-method ];
-:() def[ u< u< {} u> u> call-method ];
+:swap def[ untrace {-2} {-2} pick-del retrace ];
+
 :false 0 1 eq? const :true 1 1 eq? const
+
+:die! def[ VM :hcf ( nom ) ];
+
+
+:here def[ :MEM vmget :size () ];
 
 :[] [ ] const
 :if def[ [] ? exec ]; :if-else def[ ? exec ];
+:null? def[ null eq? ];
+
 
 :dup def[ {-1} {} pick-del ];
 :{-1,-2} -1 -2 pair const
@@ -72,13 +80,50 @@ var stdlib = """
 :drop def[ {} {-1} pick-del ]; :nip def[ {} {-2} pick-del ];
 :not def[ false true ? ];
 :ucopy def[ u> dup u< ]; :udrop def[ u> drop ];
+:u2copy def[ u> u> 2dup swap u< u< ];
+
+:get def[ get? dup null? [ :get-fail-const die! ] if  ];
+:top def[ -1 get ];
+
+:u0 def[ util-stack -1 get ];
+:u1 def[ util-stack -2 get ];
+:u2 def[ util-stack -3 get ];
+
+
+:local-stack { <dict> } const
+:l> def[ local-stack :pop_back () ]; 
+:l< def[ local-stack :append ( nom ) ];
+:lcopy def[ l> dup l< ];
+:ldrop def[ l> drop ];
+:+l def[ <dict> l< ];   
+:-l def[ l> drop ];
+:=  def[ local-stack top spin swap put ];
+:$  def[ local-stack top swap get ];
+:$() def[ $ exec ];
+
+:cf! def[ false :COND-FLAG = ];
+:ct! def[ true :COND-FLAG = ];
+:c-else def[ :COND-FLAG $ not swap if ];
+
+:dict? def[ typeof TYPE_DICTIONARY eq? ];
+:arr? def[ typeof TYPE_ARRAY eq? ];
+
 
 :while def[ u< [ ucopy exec ?REDO-BLOCK udrop ] exec ];
-:swap def[ untrace {-2} {-2} pick-del retrace ];
+
+
+:each def[ lcopy +l :scope = :block = iter :st =
+	[ :st $ :elem () 
+		:block $ :scope $ l< exec ldrop 
+	  :st $ :next () 
+	  :st $ :done () not ?REDO-BLOCK
+	] exec 
+-l ];
+
 :bind def[ :self swap const ];
+:{1//100} 100 range const
 """
 
-func _here(): _push(len(MEM))
 func _pop(): 
 	if not stack.empty():
 		return stack.pop_back()
@@ -94,6 +139,8 @@ func _trace_dec(): trace-=1
 func _untrace():
 	trace_stack.push_back(trace); trace=0
 func _retrace(): trace = trace_stack.pop_back()
+func _typeof(): _push(typeof(_pop()))
+func _range(): _push(range(_pop()))
 
 func _assert():
 	var msg = _pop()
@@ -150,15 +197,11 @@ func reset_block_if():
 			RS.back().IP = 1
 	else:
 		hcf("Tried to reset the base block!")
-	pass
 
 func cond_pick():
-	var f_val = _pop()
-	var t_val = _pop()
-	var cond_val = _pop()
+	var f_val = _pop(); var t_val = _pop(); var cond_val = _pop()
 	if cond_val: _push(t_val)
 	else: _push(f_val)
-
 
 func begin_block():
 	# print("BEGIN: ", mode)
@@ -166,7 +209,6 @@ func begin_block():
 	IP_push(mode)
 	mode = "m_compile"
 	compile_stack.push_back(["DOCOL"])
-
 
 func end_block():
 	compile("EXIT")
@@ -295,12 +337,18 @@ func interpret(input: String, s0=null, s1=null, s2=null, s3=null, s4=null, s5=nu
 	for a in args: 
 		if not _eq(a, null):
 			_push(a)
+		else:
+			break
 
 	INPUT = input; pos = 0
 	mode = "m_interpret"
 	# if input != stdlib:
 	# 	print(input)
+	var start = OS.get_ticks_usec()
 	run()
+	var end = OS.get_ticks_usec()
+	var worker_time = (end-start)/1000000.0
+	print("Call took ", worker_time, " seconds.")
 
 func h_DOCOL(): 
 	mode = "m_forth"
@@ -421,15 +469,24 @@ func compile_literal():
 	return false
 
 func mapfn():
-	var _val = _pop(); var _key = _pop()
-	dict[_key] = sfr(_val)
+	var _val = _pop(); var _key = _pop(); dict[_key] = sfr(_val)
 
 func newdict(): _push({})
+
+func _valid_key(coll, key):
+	if typeof(coll) == TYPE_DICTIONARY:
+		return coll.has(key)
+	elif typeof(coll) == TYPE_ARRAY:
+		if key < 0:
+			return abs(key) <= len(coll)
+		else:
+			return key < len(coll)
+
 func dget():
 	var _key = _pop()
-	var _dict = _pop()
-	if _dict.has(_key):
-		_push(_dict)
+	var _coll = _pop()
+	if _valid_key(_coll, _key):
+		_push(_coll[_key])
 	else:
 		_push(null)
 
@@ -438,6 +495,15 @@ func dput():
 	var _key = _pop()
 	var _dict = _pop() #print(_dict, _key, _val)
 	_dict[_key] = _val
+
+func a_nth():
+	var _idx = _pop()
+	var _arr = _pop()
+	if len(_arr) < _idx:
+		_push(_arr[_idx])
+	else:
+		hcf("Out of bounds access!")
+
 
 func def():
 	if mode == "m_compile":
@@ -452,10 +518,14 @@ func exit_def():
 	compile("EXIT"); mode = "m_interpret"
 
 func call_method(push_nulls=false):
-	# margs on name
+	# ( margs on name -- )
 	var name = _pop(); var on = _pop(); var margs = _pop().duplicate()
 	# print(on, name, margs, push_nulls)
 	_dispatch(on, name, margs, push_nulls)
+
+func call_method_noargs(push_nulls=false):
+	var name = _pop(); var on = _pop();
+	_dispatch(on, name, [], push_nulls)
 
 const argNames = ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"]
 func _dispatch(on, name, margs, push_nulls = false):
@@ -481,3 +551,55 @@ func _dispatch(on, name, margs, push_nulls = false):
 
 		if ret != null or push_nulls:
 			_push(ret)
+	
+
+class StackFrame extends Reference:
+	var MEM
+	var IP = 0
+
+	func _to_string():
+		var ipstr
+		if typeof(IP) == TYPE_ARRAY:
+			ipstr = str("[B/",len(IP),"]")
+		else:
+			ipstr = IP
+
+		return str("SF(", ipstr, ", ", _len(MEM),")")
+
+	func _init(mem, ip = 0):
+		MEM = mem
+		IP = ip
+
+	func inc(): IP += 1
+	func dec(): IP -=1
+	func instr(): return MEM[IP]
+	func compile(val): MEM.append(val)
+	func compile_many(vals): MEM.append_array(vals)
+
+	func _len(val):
+		if typeof(val) == TYPE_ARRAY:
+			return len(val)
+		return 0
+
+func iter_of():
+	var coll = _pop()
+	if typeof(coll) == TYPE_ARRAY: _push(ArrayIter.new(coll))
+	elif typeof(coll) == TYPE_DICTIONARY: _push(DictIter.new(coll))
+
+class ArrayIter extends Reference:
+	var _idx; var _arr
+	func _init(coll):
+		_arr = coll; _idx = 0
+	func next(): _idx += 1
+	func done(): return _idx >= len(_arr)
+	func elem(): return _arr[_idx]
+
+class DictIter extends Reference:
+	var _coll; var _keys; var _idx
+	func _init(coll):
+		_coll = coll
+		_keys = coll.keys()
+		_idx = 0
+	func next(): _idx += 1
+	func done(): return _idx >= len(_keys)
+	func elem(): return _coll[_keys[_idx]]
