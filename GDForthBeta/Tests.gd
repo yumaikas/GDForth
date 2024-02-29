@@ -1,6 +1,7 @@
 extends SceneTree
 
 const GDForth = preload("./GDForth.gd")
+const GDForthAlpha = preload("./GDForthAlpha.gd")
 
 func _init():
 	for i in 5:
@@ -142,8 +143,16 @@ func __test_looping(comp):
 	comp.interpret("0 [ 1+ dup 1000 lt? ] while")
 	stack_assert(comp, [1000], "Counted While")
 
-	comp.interpret("0 {1//100} [ drop 1+ ] each")
-	stack_assert(comp, [100], "Basic each")
+	comp.interpret("0 1000 range [ drop 1+ ] each")
+	stack_assert(comp, [1000], "Basic each")
+
+	var acomp = GDForthAlpha.new()
+	acomp.load_script("0 1000 range [ drop inc ] each")
+	var start = OS.get_ticks_usec()
+	acomp.resume()
+	var end = OS.get_ticks_usec()
+	var worker_time = (end-start)/1000000.0
+	print("Alpha Each took ", worker_time, " seconds.")
 
 
 var call_count = 0
@@ -157,6 +166,15 @@ func test_methods(comp):
 	comp.interpret("bind", self)
 	comp.interpret("self :mocked_call () self :get ( :call_count )")
 	stack_assert(comp, [1], "Calling into test class")
+
+func test_dispatch_perf(comp):
+	for i in 1000:
+		
+		pass
+
+
+func do_add(a, b):
+	return a + b
 
 func mocked_call():
 	call_count += 1

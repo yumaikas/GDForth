@@ -1,4 +1,4 @@
-class_name GDForthAlpha extends Object
+class_name GDForthAlpha extends Reference
 
 signal script_end()
 
@@ -194,6 +194,7 @@ func resume(a0=null,a1=null,a2=null,a3=null,a4=null,a5=null,a6=null,a7=null,a8=n
 			elif inst == "self": _push(instance)
 			elif inst == "VM": _push(self)
 			elif inst == "len": _push(len(_pop()))
+			elif inst == "range": _push(range(_pop()))
 			elif inst == "_s": print(stack)
 			elif inst in math_ops: math(inst)
 			elif inst.begins_with("="):
@@ -212,7 +213,7 @@ func resume(a0=null,a1=null,a2=null,a3=null,a4=null,a5=null,a6=null,a7=null,a8=n
 			elif inst == "def":
 				var block = _pop()
 				var name = _pop()
-				print("DEF", dict, name, block)
+				#print("DEF", dict, name, block)
 				dict[name] = block
 			elif inst == "if-else":
 				var false_lbl = _pop_special(lblSymb)
@@ -284,7 +285,7 @@ func resume(a0=null,a1=null,a2=null,a3=null,a4=null,a5=null,a6=null,a7=null,a8=n
 			else:
 				halt_fail()
 				print("ERROR: unresolved word: ", inst, "at ", IP)
-				print(dict)
+				#print(dict)
 		elif typeof(inst) == TYPE_ARRAY:
 			if inst[0] == "LIT": _push(inst[1])
 			elif inst[0] == "GETVAR": _push(locals[inst[1]])
@@ -326,14 +327,16 @@ func resume(a0=null,a1=null,a2=null,a3=null,a4=null,a5=null,a6=null,a7=null,a8=n
 
 func call_method(push_nulls=false):
 	var on = _pop(); var name = _pop(); var margs = _pop().duplicate()
-	print(on, name, margs, push_nulls)
+	#print(on, name, margs, push_nulls)
 	_dispatch(on, name, margs, push_nulls)
 
 const argNames = ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"]
+
 func _dispatch(on, name, margs, push_nulls = false):
 	if typeof(on) == TYPE_OBJECT:
 		var fn = funcref(on, name)
 		var ret = fn.call_funcv(margs)
+		on.callv(name, margs)
 		if ret != null or push_nulls:
 			_push(ret)
 	else:
@@ -347,7 +350,8 @@ func _dispatch(on, name, margs, push_nulls = false):
 
 		margs.append(on)
 		if trace > 0:
-			print(toParse, anames, margs)
+			pass
+			#print(toParse, anames, margs)
 		var ret = expr.execute(margs)
 
 		if ret != null or push_nulls:

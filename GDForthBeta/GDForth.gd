@@ -305,7 +305,14 @@ func run():
 		var inst
 		if mode == "m_forth":
 			inst = instr()
-		safe_call(mode)
+		if mode == "m_forth":
+			m_forth()
+		elif mode == "m_compile":
+			m_compile()
+		elif mode == "m_head":
+			m_head()
+		elif mode == "m_interpret":
+			m_interpret()
 		if done == false:
 			hcf(mode, " failed!")
 		if oldmode != "m_forth":
@@ -528,6 +535,7 @@ func call_method_noargs(push_nulls=false):
 	_dispatch(on, name, [], push_nulls)
 
 const argNames = ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"]
+#var fn_names = {}
 func _dispatch(on, name, margs, push_nulls = false):
 	if typeof(on) == TYPE_OBJECT:
 		var ret = on.callv(name, margs)
