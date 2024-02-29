@@ -7,49 +7,48 @@ var IP = -1
 var trace = 0; var trace_indent = false
 var stack = []; var utilStack = []; var returnStack = []
 var dict = {}; var locals = {}
+var evts = {};
 var stop = false; var is_error = false
 var CODE 
 var errSymb = {}; var lblSymb = {}; var iterSymb = {}; var prevSymb = {}
+var in_evt = false
 var instance
 
-"""
-2dup lt? if drop ; nip  end
-"""
-
 var _stdlib = """
-'box [ 1 narray ] def '{empty} [ 0 narray ] def
-'u< 'U-PUSH box def 'u> 'U-POP box def
-'{ [ stack-size u< ] def '} [ stack-size u> - narray ] def
-'true { 'LIT 1 1 eq? } def 'false { 'LIT 0 1 eq? } def
-'swap { 'PICK-DEL -2 box -2 box } def
-'dup { 'PICK-DEL -1 box {empty} } def  '2dup { 'PICK-DEL { -1 -2 } {empty} } def
-'drop { 'PICK-DEL {empty} -1 box } def 'nip { 'PICK-DEL {empty} -2 box } def 
-'2drop { 'PICK-DEL {empty} { -1 -2 } }
-') [ stack-size u> - narray u> u> call-method ] def
-')? [ stack-size u> - narray u> u> call-method-null ] def
-'if [ [ ] if-else ] def
-'2max [ 2dup lt? [ drop ] [ nip ] if-else ] def
-'pos? [ 0 gt? ] def  'neg? [ 0 lt? ] def  'zero? [ 0 eq? ] def
-'inc [ 1 + ] def  'dec [ 1 - ] def
-'nom [ u> dec u< ] def -( 'eat' parameters into a method call )-
-'get-scope [ VM :get( 'locals ) ] def 'set-scope [ VM :set( dup 'locals swap ) drop ] def
-'not [ [ false ] [ true ] if-else ] def
-'do-with-scope [ get-scope u< set-scope do-block u> set-scope ] def
-'vmget [ VM :get( nom ) ] def  'vmset [ swap VM :set( nom nom ) ] def
-'+trace [ 'trace vmget inc 'trace vmset ] def
-'-trace [ 'trace vmget dec 0 2max 'trace vmset ] def
-'trace [ +trace do-block -trace ] def
+:stop [ suspend ] def
 
-'while [ get-scope +scope =old-scope =block 
+:box [ 1 narray ] def :{empty} [ 0 narray ] def
+:u< :U-PUSH box def :u> :U-POP box def
+:{ [ stack-size u< ] def :} [ stack-size u> - narray ] def
+:true { :LIT 1 1 eq? } def :false { :LIT 0 1 eq? } def
+:swap { :PICK-DEL -2 box -2 box } def
+:2dup { :PICK-DEL { -1 -2 } {empty} } def
+:drop { :PICK-DEL {empty} -1 box } def :nip { :PICK-DEL {empty} -2 box } def 
+:2drop { :PICK-DEL {empty} { -1 -2 } } def
+:) [ stack-size u> - narray u> u> call-method ] def
+:)? [ stack-size u> - narray u> u> call-method-null ] def
+:if [ [ ] if-else ] def
+:2max [ 2dup lt? [ drop ] [ nip ] if-else ] def
+:pos? [ 0 gt? ] def  :neg? [ 0 lt? ] def  :zero? [ 0 eq? ] def
+:inc [ 1 + ] def  :dec [ 1 - ] def
+:nom [ u> dec u< ] def -( :eat: parameters into a method call )-
+:not [ [ false ] [ true ] if-else ] def
+:do-with-scope [ get-scope u< set-scope do-block u> set-scope ] def
+:vmget [ VM &get( nom ) ] def  :vmset [ swap VM &set( nom nom ) ] def
+:+trace [ :trace vmget inc :trace vmset ] def
+:-trace [ :trace vmget dec 0 2max :trace vmset ] def
+:trace [ +trace do-block -trace ] def
+
+:while [ get-scope +scope =old-scope =block 
 	%LOOP block old-scope do-with-scope LOOP goto-if-true
 	-scope ] def
 
-'each [ get-scope +scope 
+:each [ get-scope +scope 
 	=outer =block =arr 0 =idx
 	arr len pos? [
 		%LOOP 
 			arr idx nth block outer do-with-scope 
-			1 idx inc =idx
+			idx inc =idx
 		arr len idx gt? LOOP goto-if-true
 	] if
 	-scope
@@ -57,8 +56,6 @@ var _stdlib = """
 """
 
 func _init(script=null,bind_to=null):
-	m = RegEx.new()
-	m.compile("[\\n\\r\\s]+")
 
 	if script:
 		load_script(script)
@@ -76,8 +73,8 @@ func load_script(script):
 	
 	var inputs = str(_stdlib, script)
 	var drop = false
-	inputs = m.sub(inputs, " ", true)
-	var toks = inputs.split(" ")
+	inputs = inputs.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+	var toks = inputs.split(" ", false)
 
 	for tok in toks:
 		if tok == "": continue
@@ -89,6 +86,7 @@ func load_script(script):
 	IP = 0
 	stop = false
 	is_error = false
+	resume()
 
 func immediate_script(script): 
 	load_script(script)
@@ -131,8 +129,31 @@ func sig_resume(a0=null,a1=null,a2=null,a3=null,a4=null,a5=null,a6=null,a7=null,
 	if trace > 0: print("resumed from signal!")
 	resume(a0,a1,a2,a3,a4,a5,a6,a7,a8,a9)
 
+var dispatch_count
+
+func evt_call(def, a0=null,a1=null,a2=null,a3=null,a4=null,a5=null,a6=null,a7=null,a8=null,a9=null):
+	in_evt = true
+	if not evts.has(def):
+		push_error("Tried to fire non-existant event!")
+		return
+
+	var args =[a0,a1,a2,a3,a4,a5,a6,a7,a8,a9]
+	for a in args:
+		if a == null:
+			break
+		_push(a)
+	
+	returnStack.append(IP)
+	returnStack.append(dict["stop"][lblSymb])
+	IP = evts[def][lblSymb]
+	resume()
+	in_evt = false
+
+
+
 # The parameters are an attempt to make this a -very- widely connectable signal handler
 func resume(a0=null,a1=null,a2=null,a3=null,a4=null,a5=null,a6=null,a7=null,a8=null,a9=null):
+	dispatch_count = 0
 	var args =[a0,a1,a2,a3,a4,a5,a6,a7,a8,a9]
 	if is_error:
 		push_error("Attempted to resume failed GDForth script")
@@ -140,12 +161,58 @@ func resume(a0=null,a1=null,a2=null,a3=null,a4=null,a5=null,a6=null,a7=null,a8=n
 	stop = false
 	while IP < len(CODE) and not stop:
 		var inst = CODE[IP]
+		dispatch_count +=1
 		if trace > 0:
 			print("  ".repeat(trace - 1), 
 				"TRACE: ", IP, ", ", inst, " DATA:", stack, " RETURN:", returnStack)
-		if typeof(inst) == TYPE_STRING:
+		if typeof(inst) == TYPE_ARRAY:
+			if inst[0] == "LIT": _push(inst[1])
+			elif inst[0] == "GETVAR": _push(locals[inst[1]])
+			elif inst[0] == "CALL":
+				if trace_indent: trace+=1
+				_r_push(IP+1)
+				IP = inst[1]
+				continue
+			elif inst[0] == "U-PUSH": _u_push(_pop())
+			elif inst[0] == "U-POP": _push(_u_pop())
+			elif inst[0] == "WAIT":
+				if in_evt:
+					print("ERROR: suspended in evt_call!")
+					halt_fail()
+					return
+				var obj = _pop()
+				if not obj.is_connected(inst[1], self, "sig_resume"):
+					if trace > 0: print("connecting")
+					obj.connect(inst[1], self, "sig_resume", [], CONNECT_ONESHOT | CONNECT_DEFERRED)
+				else:
+					print(str("Already connected to ", obj))
+				stop = true
+				IP += 1
+				continue
+			elif inst[0] == "PICK-DEL":
+				var to_add = []
+				for idx in inst[1]:
+					to_add.append(stack[idx])
+				for idx in inst[2]:
+					stack.pop_at(idx)
+				stack.append_array(to_add)
+
+			elif inst[0] == "BLOCK-LIT":
+				IP = inst[1]; _push(inst[2])
+			elif inst[0] == "GET-MEMBER": _push(instance.get(inst[1]))
+
+			else:
+				stop = true
+				print(str("Unable to execute inst ", CODE[IP], " at ", IP))
+				push_error(str("Unable to execute inst ", CODE[IP], " at ", IP))
+				_push(inst)
+				#
+				break
+		elif typeof(inst) == TYPE_STRING:
 			if inst.begins_with("."): 
-				_push(instance.get(inst.substr(1)))
+				# _push(instance.get(inst.substr(1)))
+				CODE[IP] = ["GET-MEMBER", inst.substr(1)]
+				continue
 			elif inst.begins_with(">"):
 				var val = _pop()
 				if trace > 0: print("SETTING", instance, inst.substr(1))
@@ -164,7 +231,7 @@ func resume(a0=null,a1=null,a2=null,a3=null,a4=null,a5=null,a6=null,a7=null,a8=n
 					is_error = true
 					stop = true
 					push_error(str("invalid call ", inst))
-			elif inst.begins_with(":"):
+			elif inst.begins_with("&"):
 				# ( obj name stack-len )
 				if inst.ends_with("("):
 					_u_push(_pop())
@@ -184,13 +251,20 @@ func resume(a0=null,a1=null,a2=null,a3=null,a4=null,a5=null,a6=null,a7=null,a8=n
 					_push(args[int(inst.substr(1))])
 				else:
 					stop = true; is_error = true
-			elif inst.begins_with("'"):
+			elif inst.begins_with(":"):
 				CODE[IP] = ["LIT", inst.substr(1)]
 				continue
 			elif inst.begins_with("~"):
 				CODE[IP] = ["WAIT", inst.substr(1)]
 				continue
+			elif inst == "narray":
+				var n = _pop(); var top = []
+				for i in n: top.append(_pop())
+				top.invert(); _push(top)
 			elif inst == "print": print(_pop())
+			elif inst == "suspend": 
+				stop = true
+				break
 			elif inst == "self": _push(instance)
 			elif inst == "VM": _push(self)
 			elif inst == "len": _push(len(_pop()))
@@ -199,10 +273,6 @@ func resume(a0=null,a1=null,a2=null,a3=null,a4=null,a5=null,a6=null,a7=null,a8=n
 			elif inst in math_ops: math(inst)
 			elif inst.begins_with("="):
 				locals[inst.substr(1)] = _pop()
-			elif inst == "narray":
-				var n = _pop(); var top = []
-				for i in n: top.append(_pop())
-				top.invert(); _push(top)
 			elif inst == "nth":
 				var at = _pop(); var arr = _pop()
 				_push(arr[at])
@@ -230,19 +300,29 @@ func resume(a0=null,a1=null,a2=null,a3=null,a4=null,a5=null,a6=null,a7=null,a8=n
 					if trace_indent: trace+=1
 					_r_push(IP+1); IP = false_lbl[lblSymb]
 					continue
+			elif inst == "dup": stack.push_back(stack.back())
+			elif inst == "drop": stack.pop_back()
 			elif inst == "+scope":
 				var old_locals = locals
 				locals = { prevSymb: old_locals }
 			elif inst == "-scope":
 				var old_locals = locals[prevSymb]
 				locals = old_locals
-			# elif inst == "set-scope": locals = _pop()
+			elif inst == "get-scope": _push(locals)
+			elif inst == "set-scope": locals = _pop()
 			elif inst == "goto-if-true":
 				var JUMP = _pop_special(lblSymb)[lblSymb]
 				if _pop(): IP = JUMP
 				# Let the IP += 1 happen, so we skip the lable
 			elif inst == "stack-size":
 				_push(len(stack))
+			elif inst == "def-evt":
+				var block = _pop()
+				var name = _pop()
+				#print("DEF", dict, name, block)
+				evts[name] = block
+				dict[name] = block
+
 			elif inst == "[":
 				var SEEK = IP+1
 				var DEPTH = 1
@@ -261,6 +341,15 @@ func resume(a0=null,a1=null,a2=null,a3=null,a4=null,a5=null,a6=null,a7=null,a8=n
 			elif inst == "]":
 				if trace_indent: trace -= 1
 				IP = _r_pop(); continue
+			elif inst == "exec":
+				_r_push(IP+1)
+				var word_name = _pop()
+				if dict.has(word_name):
+					IP = dict[word_name][lblSymb]
+				else:
+					halt_fail()
+					push_error("Tried to exec word that doesn't exist!")
+				continue
 			elif inst == "do-block":
 				_r_push(IP+1)
 				if trace_indent: trace += 1
@@ -286,42 +375,6 @@ func resume(a0=null,a1=null,a2=null,a3=null,a4=null,a5=null,a6=null,a7=null,a8=n
 				halt_fail()
 				print("ERROR: unresolved word: ", inst, "at ", IP)
 				#print(dict)
-		elif typeof(inst) == TYPE_ARRAY:
-			if inst[0] == "LIT": _push(inst[1])
-			elif inst[0] == "GETVAR": _push(locals[inst[1]])
-			elif inst[0] == "CALL":
-				if trace_indent: trace+=1
-				_r_push(IP+1)
-				IP = inst[1]
-				continue
-			elif inst[0] == "U-PUSH": _u_push(_pop())
-			elif inst[0] == "U-POP": _push(_u_pop())
-			elif inst[0] == "WAIT":
-				var obj = _pop()
-				if not obj.is_connected(inst[1], self, "sig_resume"):
-					if trace > 0: print("connecting")
-					obj.connect(inst[1], self, "sig_resume", [], CONNECT_ONESHOT | CONNECT_DEFERRED)
-				else:
-					print(str("Already connected to ", obj))
-				stop = true
-				IP += 1
-				continue
-			elif inst[0] == "PICK-DEL":
-				var to_add = []
-				for idx in inst[1]:
-					to_add.append(stack[idx])
-				for idx in inst[2]:
-					stack.pop_at(idx)
-				stack.append_array(to_add)
-
-			elif inst[0] == "BLOCK-LIT":
-				IP = inst[1]; _push(inst[2])
-			else:
-				stop = true
-				print(str("Unable to execute inst ", CODE[IP], " at ", IP))
-				push_error(str("Unable to execute inst ", CODE[IP], " at ", IP))
-				_push(inst)
-				break
 		IP += 1
 	if not stop: emit_signal("script_end")
 
@@ -331,6 +384,9 @@ func call_method(push_nulls=false):
 	_dispatch(on, name, margs, push_nulls)
 
 const argNames = ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"]
+
+# TODO: Event select via bound params used for "select context"
+# TODO: Blog about teh return to GDForth Alpha
 
 func _dispatch(on, name, margs, push_nulls = false):
 	if typeof(on) == TYPE_OBJECT:

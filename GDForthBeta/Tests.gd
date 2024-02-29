@@ -133,26 +133,14 @@ func test_locals(comp):
 	stack_assert(comp, [123], "Can store and fetch locals")
 
 func __test_looping(comp):
-
-	comp.interpret("1 2 3 [ 1 + false ] while")
-	stack_assert(comp, [1,2,4], "While terminates")
-
-	comp.interpret("0 [ 1+ dup 4 lt? ] while")
-	stack_assert(comp, [4], "Counted While")
-
-	comp.interpret("0 [ 1+ dup 1000 lt? ] while")
-	stack_assert(comp, [1000], "Counted While")
-
-	comp.interpret("0 1000 range [ drop 1+ ] each")
-	stack_assert(comp, [1000], "Basic each")
-
 	var acomp = GDForthAlpha.new()
-	acomp.load_script("0 1000 range [ drop inc ] each")
-	var start = OS.get_ticks_usec()
-	acomp.resume()
-	var end = OS.get_ticks_usec()
-	var worker_time = (end-start)/1000000.0
-	print("Alpha Each took ", worker_time, " seconds.")
+	acomp.load_script(":bench [ 0 swap range [ drop 1 + ] each drop ] def-evt")
+	for i in 10:
+		var start = OS.get_ticks_usec()
+		acomp.evt_call("bench", 100)
+		var end = OS.get_ticks_usec()
+		var worker_time = (end-start)/1000000.0
+		print("Alpha Each took ", worker_time, " seconds, dispatching", acomp.dispatch_count)
 
 
 var call_count = 0
