@@ -1,7 +1,6 @@
 extends SceneTree
 
 const GDForth = preload("./GDForth.gd")
-const GDForthAlpha = preload("./GDForthAlpha.gd")
 
 func _init():
 	for i in 5:
@@ -77,14 +76,14 @@ func assert_(cond, message):
 		printraw(".")
 
 func test_pushing(comp):
-	comp.interpret(":asdf")
+	comp.load_script(":asdf")
 	assert_(comp.stack.back() == "asdf", "String Symbol Literal failed!")
 
-	comp.interpret(" [[this is a test]] ")
+	comp.load_script(" [[this is a test]] ")
 	assert_(comp.stack.back() == "this is a test", "Long string failed!")
 
-	comp.interpret("clear-stack")
-	comp.interpret("1 2 3")
+	comp.load_script("clear-stack")
+	comp.load_script("1 2 3")
 	assert_(comp.stack == [1, 2, 3], "Can push integers")
 
 	comp.interpret("clear-stack 11 23 354")
@@ -92,16 +91,6 @@ func test_pushing(comp):
 
 	comp.interpret("1 u< 2 u<")
 	assert_(array_eq(comp.constants['util-stack'], [1, 2]), "Can push to util-stack")
-
-func test_compilation(comp):
-	comp.interpret(":one def[ 1 ];")
-	assert_(
-		array_eq(comp.MEM.slice(-4, -1), [ "DOCOL", "LIT", 1, "EXIT" ]),
-		"Compile number")
-	comp.interpret(":add def[ + ];") 
-	assert_( array_eq(comp.MEM.slice(-3,-1), [ "DOCOL", "+", "EXIT" ]), "Compile primitive") 
-	comp.interpret("one one add") 
-	assert_( array_eq(comp.stack, [ 2 ]), "Execute compiled nonprimitives")
 
 func test_numbers(comp):
 	comp.interpret("-1 -2 -3")
@@ -112,15 +101,15 @@ func test_ops(comp):
 	assert_(array_eq(comp.stack, [true, true, true]), "Ops")
 
 func test_blocks(comp):
-	comp.interpret("{ 1 2 3 }")
+	comp.load_script("{ 1 2 3 }")
 	assert_(array_eq(comp.stack.back(), [1,2,3]), "Basic arrays")
-	comp.interpret("clear-stack")
+	comp.load_script("clear-stack")
 
-	comp.interpret("[ 1 2.0 + ] exec")
+	comp.load_script("[ 1 2.0 + ] do-block")
 	stack_assert(comp, [3.0], "Can exec")
 
 
-	comp.interpret(":2max def[ 2dup lt? spin ? ];")
+	comp.interpret(":2max [ 2dup lt? spin ? ] def")
 	comp.interpret("1 2 2max")
 	stack_assert(comp, [2], "2max worked")
 
@@ -132,15 +121,14 @@ func test_locals(comp):
 	comp.interpret("+l 123 :foo = :foo $")
 	stack_assert(comp, [123], "Can store and fetch locals")
 
-func __test_looping(comp):
-	var acomp = GDForthAlpha.new()
-	acomp.load_script(":bench [ 0 swap range [ drop 1 + ] each drop ] def-evt")
+func _ignore_test_looping(comp):
+	comp.load_script(":bench [ 0 swap range [ drop 1 + ] each drop ] def-evt")
 	for i in 10:
 		var start = OS.get_ticks_usec()
-		acomp.evt_call("bench", 100)
+		comp.evt_call("bench", 1000)
 		var end = OS.get_ticks_usec()
 		var worker_time = (end-start)/1000000.0
-		print("Alpha Each took ", worker_time, " seconds, dispatching", acomp.dispatch_count)
+		print("Alpha Each took ", worker_time, " seconds, dispatching", comp.dispatch_count)
 
 
 var call_count = 0
