@@ -22,7 +22,6 @@ var instance
 
 func _init():
     prep()
-    print("IOTA:", _iota)
 
 func halt_fail():
     stop = true
