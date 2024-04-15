@@ -5,7 +5,11 @@ signal script_end
 var m
 var IP = -1
 var trace = 0; var trace_indent = false
-var stack = []; var utilStack = []; var returnStack = []; var locals = {}
+var stack = []; 
+var utilStack = []; 
+var returnStack = []; 
+var loopStack = [];
+var locals = {}
 var dict = {}; 
 var constant_pool = []
 var evts = {};
@@ -16,9 +20,9 @@ var errSymb = {}; var lblSymb = {}; var iterSymb = {}; var prevSymb = {}
 var in_evt = false
 var instance
 
-static func make():
-    var vm = .new()
-    vm.prep()
+func _init():
+    prep()
+    print("IOTA:", _iota)
 
 func halt_fail():
     stop = true
@@ -30,6 +34,8 @@ func __pop(stack, errMsg):
         halt_fail(); 
         return {errSymb: errMsg}
     return stack.pop_back()
+func _l_push(e): loopStack.append(e)
+func _l_pop(): return __pop(loopStack, "LOOP STACK UNDERFLOW")
 func _u_push(e): utilStack.append(e)
 func _u_pop(): return __pop(utilStack, "UTILITY STACK UNDERFLOW")
 func _r_push(e): returnStack.append(e)
@@ -84,17 +90,49 @@ func _dispatch(on, name, margs, push_nulls = false):
             _push(ret)
 
 
+const _stdlib = """
+: stop suspend ;
+: box 1 narray ;
+: if ( block -- quot/' ) [ ] if-else ;
+: {empty} 0 narray ;
+: { stack-size u< ;
+: } stack-size u> - narray ;
+: 2dup shuf: ab abab ;
+: pos? 0 gt? ;
+: 2drop drop drop ;
+: ) stack-size u> - narray u> u> call-method ;
+: )? stack-size u> - narray u> u> call-method-null ;
+: nom u> 1- u< ( eat parameters into a method call ) ;
+: not ( t/f -- f/t ) [ false ] [ true ] if-else ;
+: while ( block: ( -- t/f ) -- ..  ) l< l<here+ l@1 do-block l@ goto-if-true l> l> 2drop ;
+: each ( arr block -- .. ) 
+    l< l< ( l: block arr )
+    l@ len pos? [
+        0 l< ( l: block arr idx )
+        l<here+ ( l: 3:block 2:arr 1:idx 0:lbl )
+        l@2 l@1 nth l@3 do-block ( fetch element via arr & idx, exec block )
+        l@1 1+ l!1  ( increment idx )
+        l@2 len l@1 gt? l@ goto-if-true ( check if we need to continue )
+    ] if
+;
+
+"""
+
+
 func comp(script):
     var toks = tokenize(script)
-    compile(toks)
+    return compile(toks)
 
-func do(word, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9):
+func do(word, a0=null, a1=null, a2=null, a3=null, a4=null, a5=null, a6=null, a7=null, a8=null, a9=null):
     if not(word in dict):
         push_error("Tried to do nonexistent word: ")
         return
     var args = [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9]
     for a in args:
-        _push(a)
+        if a != null:
+            _push(a)
+        else:
+            break
     _r_push(IP) 
     _r_push(0)
     IP = dict[word]
@@ -117,17 +155,25 @@ func tokenize(script):
 
     for tok in toks:
         if tok == "": continue
-        if tok == "-(": drop = true
-        elif tok == ")-": 
-            drop = false
-            continue
-        if not drop: ret_toks.append(tok)
+        ret_toks.append(tok)
 
     return ret_toks
     
 
 var lit_counts = {}
 var _iota = 0
+
+var imm_counts = {}
+
+func imm(imm_count=0):
+    _iota += 1
+
+    if imm_count != 0:
+        imm_counts[_iota] = imm_count
+
+    return _iota
+
+
 func iota(lit_count=0):
     _iota += 1
 
@@ -161,6 +207,18 @@ var OP_DEF = iota()
 
 var OP_U_PUSH = iota() 
 var OP_U_POP = iota()
+var OP_U_FETCH = iota()
+var OP_L_PUSH = iota() 
+var OP_L_POP = iota()
+var OP_L_FETCH = iota()
+var OP_L_FETCH_1 = iota()
+var OP_L_FETCH_2 = iota()
+var OP_L_FETCH_3 = iota()
+var OP_L_STORE = iota()
+var OP_L_STORE_1 = iota()
+var OP_L_STORE_2 = iota()
+var OP_L_STORE_3 = iota()
+var OP_L_HERE_NEXT = iota()
 
 var OP_STACK_CLEAR = iota()
 var OP_CALL_METHOD = iota()
@@ -198,7 +256,7 @@ var OP_SELF = iota()
 
 var OP_RETURN = iota()
 var OP_DO_BLOCK = iota()
-var OP_CALL = iota(1)
+var OP_CALL = imm(1)
 # var OP_GETARG = iota()
 var OP_SHUFFLE = iota(2)
 var OP_SET_SCOPE = iota()
@@ -211,15 +269,24 @@ var decode_table = {}
 
 func print_code():
     var num_lits = 0
+    var num_immediates = 0
     print("[")
+    var idx = 0
     for o in CODE:
+        printraw(idx, ": ")
+        idx += 1
         if num_lits > 0:
             print("\t", constant_pool[o])
             num_lits -= 1
+        elif num_immediates > 0:
+            print("\t", o)
+            num_immediates -= 1
         else:
             print(decode_table[o])
             if o in lit_counts:
                 num_lits += lit_counts[o]
+            if o in imm_counts:
+                num_immediates += imm_counts[o]
     print("]")
         
         
@@ -228,6 +295,7 @@ func prep():
         if p.name.begins_with("OP_"):
             decode_table[get(p.name)] = p.name
     CODE.append(OP_END_EVAL)
+    eval(_stdlib)
             
 
 func assoc_constant(value):
@@ -239,7 +307,7 @@ func assoc_constant(value):
 
 func _comp_method_setup(to):
     CODE.append_array([
-            OP_SELF, OP_U_PUSH,
+            OP_U_PUSH,
             OP_LIT, assoc_constant(to), OP_U_PUSH,
             OP_STACK_SIZE, OP_U_PUSH
     ])
@@ -248,8 +316,19 @@ var _comp_map = {
     "+": OP_ADD, "-": OP_SUB, "*": OP_MUL, "div": OP_DIV,
     "lt?": OP_LT, "le?": OP_LE, "gt?": OP_GT, "ge?": OP_GE,
     "eq?": OP_EQ,
+    "true": [OP_LIT, assoc_constant(true)],
+    "false": [OP_LIT, assoc_constant(false)],
+    "1+": [OP_LIT, assoc_constant(1), OP_ADD],
+    "1-": [OP_LIT, assoc_constant(1), OP_SUB],
     "if-else": OP_IF_ELSE,
+    "do-block": OP_DO_BLOCK,
     "_s": OP_PRINT_STACK,
+    "goto-if-true": OP_GOTO_WHEN_TRUE,
+    "u<": OP_U_PUSH, "u>": OP_U_POP, "u@": OP_U_FETCH,
+    "l<": OP_L_PUSH, "l>": OP_L_POP, "l@": OP_L_FETCH,
+    "l@0": OP_L_FETCH, "l@1": OP_L_FETCH_1, "l@2": OP_L_FETCH_2, "l@3": OP_L_FETCH_3,
+    "l!0": OP_L_STORE, "l!1": OP_L_STORE_1, "l!2": OP_L_STORE_2, "l!3": OP_L_STORE_3,
+    "l<here+": OP_L_HERE_NEXT,
     "call-method": OP_CALL_METHOD,
     "call-method-null": OP_CALL_METHOD_NULL,
     "clear-stack": OP_STACK_CLEAR,
@@ -293,7 +372,7 @@ func compile(tokens):
             if tok.ends_with("("):
                 _comp_method_setup(tok.substr(1, len(tok)-2))
                 t_idx+=1
-            elif tok.ends_wth("()"):
+            elif tok.ends_with("()"):
                 CODE.append_array([
                     OP_CALL_METHOD_LIT, assoc_constant(tok.substr(1, len(tok)-3))
                 ])
@@ -309,7 +388,7 @@ func compile(tokens):
                 OP_SETLOCAL,
                 assoc_constant(tok.substr(1))
             ])
-            CODE[len(CODE)-3] = assoc_constant({ lblSymb: len(CODE) })
+            CODE[len(CODE)-3] = assoc_constant(len(CODE))
             t_idx+=1
 #        elif tok.begins_with("$"):
 #            if tok.substr(1) in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]:
@@ -319,7 +398,7 @@ func compile(tokens):
 #                var err = str("Could not compile ", tok, " as a valid argument get")
 #                push_error(err)
 #                return { "err": err }
-        elif tok.begins_with(":"):
+        elif tok.begins_with(":") and tok != ":" and tok != "::":
             CODE.append_array([OP_LIT, assoc_constant(tok.substr(1))])
             t_idx+=1
         elif tok.begins_with("~"):
@@ -331,12 +410,20 @@ func compile(tokens):
         elif tok.begins_with("="):
             CODE.append_array([OP_SETLOCAL, assoc_constant(tok.substr(1))])
             t_idx += 1
-        elif tok in ["def:", "defl:", "evt:", "evtl:"]:
+        elif tok == "shuf:":
+            CODE.append_array([
+                OP_SHUFFLE, 
+                assoc_constant(tokens[t_idx+1]), 
+                assoc_constant(tokens[t_idx+2]),
+            ])
+            t_idx += 3
+            
+        elif tok in [":", "::", "evt:", "evtl:"]:
             var name = tokens[t_idx + 1];
             var SEEK = t_idx + 2;
 
             while tokens[SEEK] != ";":
-                if tokens[SEEK] in ["def:", "defl:", "evt:", "evtl:"]:
+                if tokens[SEEK] in [":", "::", "evt:", "evtl:"]:
                     var err = str("Cannot nest `", tok, "`, while defining '", name, "'")
                     push_error(err)
                     return { "err": err }
@@ -347,7 +434,7 @@ func compile(tokens):
             if tok in ["evt:", "evtl:"]:
                 evts[name] = len(CODE)
 
-            if tok in ["defl:", "evtl:"]:
+            if tok in ["::", "evtl:"]:
                 CODE.append(OP_PUSH_SCOPE)
 
             var to_comp = tokens.slice(t_idx + 2, SEEK - 1)
@@ -356,10 +443,9 @@ func compile(tokens):
             if "err" in status:
                 return status
 
-            if tok in ["defl:", "evtl:"]:
+            if tok in ["::", "evtl:"]:
                 CODE.append(OP_DROP_SCOPE)
             CODE.append(OP_RETURN)
-            # 
             CODE[dict[name]-1] = assoc_constant(len(CODE))
 
             t_idx = SEEK + 1
@@ -385,15 +471,23 @@ func compile(tokens):
             CODE.append(OP_RETURN)
             CODE[slot_1] = assoc_constant(len(CODE))
             t_idx = SEEK 
-
+        elif tok == "(":
+            var SEEK = t_idx + 1;
+            var DEPTH = 1
+            while DEPTH > 0:
+                if tokens[SEEK] == "(": DEPTH += 1
+                elif tokens[SEEK] == ")": DEPTH -= 1
+                if SEEK > len(tokens):
+                    var err = str("Unmatched (")
+                    push_error(err)
+                    return {"err": err}
+                SEEK += 1
+            t_idx = SEEK
         elif tok.is_valid_integer():
             CODE.append_array([OP_LIT, assoc_constant(int(tok))])
             t_idx += 1
         elif tok.is_valid_float():
             CODE.append_array([OP_LIT, assoc_constant(float(tok))])
-            t_idx += 1
-        elif tok in _comp_map:
-            CODE.append(_comp_map[tok])
             t_idx += 1
         elif tok in dict:
             if typeof(dict[tok]) == TYPE_ARRAY: 
@@ -402,10 +496,15 @@ func compile(tokens):
                 CODE.append_array([OP_CALL, dict[tok]])
             t_idx += 1
         elif tok in _comp_map:
-            CODE.append(_comp_map[tok])
+            if typeof(_comp_map[tok]) == TYPE_ARRAY:
+                CODE.append_array(_comp_map[tok])
+            else:
+                CODE.append(_comp_map[tok])
             t_idx += 1
         else:
             var err = str("Unrecognized command: ", tok)
+            print(_comp_map.keys())
+            print(dict.keys())
             push_error(err)
             return {"err": err}
     return {}
@@ -428,6 +527,7 @@ func exec():
 
                 
         var inst = CODE[IP]
+
         if inst == OP_LIT:
             _push(constant_pool[CODE[IP+1]]); IP += 2
         elif inst == OP_CALL:
@@ -438,6 +538,42 @@ func exec():
             IP += 1
         elif inst == OP_U_POP:
             _push(_u_pop())
+            IP += 1
+        elif inst == OP_U_FETCH:
+            _push(utilStack.back())
+            IP += 1
+        elif inst == OP_L_PUSH:
+            _l_push(_pop())
+            IP += 1
+        elif inst == OP_L_POP:
+            _push(_l_pop())
+            IP += 1
+        elif inst == OP_L_FETCH:
+            _push(loopStack.back())
+            IP += 1
+        elif inst == OP_L_FETCH_1:
+            _push(loopStack[len(loopStack)-2])
+            IP += 1
+        elif inst == OP_L_FETCH_2:
+            _push(loopStack[len(loopStack)-3])
+            IP += 1
+        elif inst == OP_L_FETCH_3:
+            _push(loopStack[len(loopStack)-4])
+            IP += 1
+        elif inst == OP_L_STORE:
+            loopStack[len(loopStack)-1] = _pop()
+            IP += 1
+        elif inst == OP_L_STORE_1:
+            loopStack[len(loopStack)-2] = _pop()
+            IP += 1
+        elif inst == OP_L_STORE_2:
+            loopStack[len(loopStack)-3] = _pop()
+            IP += 1
+        elif inst == OP_L_STORE_3:
+            loopStack[len(loopStack)-4] = _pop()
+            IP += 1
+        elif inst == OP_L_HERE_NEXT:
+            _l_push(IP+1)
             IP += 1
         elif inst == OP_WAIT:
             if in_evt:
@@ -459,7 +595,7 @@ func exec():
             var output = constant_pool[CODE[IP+2]]
 
             for i in len(input):
-                var idx = len(input) - i
+                var idx = len(input) - i - 1
                 var c = input[idx]
                 shuf_locals[c] = _pop()
             for c in output:
@@ -472,8 +608,8 @@ func exec():
             IP = _r_pop()
         elif inst == OP_DO_BLOCK:
             _r_push(IP+1)
-            var lbl = _pop_special(lblSymb)
-            IP = lbl[lblSymb]
+            var lbl = _pop()
+            IP = lbl
         elif inst == OP_GET_MEMBER:
             _push(instance.get(constant_pool[CODE[IP+1]]))
             IP += 2
@@ -481,16 +617,19 @@ func exec():
             var block = _pop()
             var name = _pop()
             dict[name] = block
+            IP += 1
         elif inst == OP_SET_MEMBER:
             instance.set(constant_pool[CODE[IP+1]], _pop())
             IP += 2
         elif inst == OP_SELF:
             _push(instance)
+            IP += 1
         elif inst == OP_VM:
             _push(self)
+            IP += 1
         elif inst == OP_CALL_METHOD_LIT:
             var mname = constant_pool[CODE[IP+1]]
-            _dispatch(instance, mname, [], false)
+            _dispatch(_pop(), mname, [], false)
             IP += 2
         elif inst == OP_CALL_METHOD:
             call_method(false)
@@ -539,8 +678,11 @@ func exec():
         elif inst == OP_GOTO:
             IP = constant_pool[CODE[IP+1]]
         elif inst == OP_GOTO_WHEN_TRUE:
-            var JUMP = _pop_special(lblSymb)[lblSymb]
-            if _pop(): IP = JUMP
+            var JUMP = _pop()
+            if _pop(): 
+                IP = JUMP
+            else:
+                IP += 1
         elif inst == OP_DUP:
             stack.push_back(stack.back())
             IP += 1

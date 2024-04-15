@@ -1,4 +1,4 @@
-extends SceneTree
+class_name VM_Tests extends SceneTree
 
 const VM = preload("./VM.gd")
 
@@ -9,7 +9,7 @@ func _init():
     for m in get_method_list():
         if m.name.begins_with("__test"):
             focus = true
-            var comp = VM.make()
+            var comp = VM.new()
             printraw(m.name, ": ")
             callv(m.name, [comp])
             print()
@@ -26,7 +26,9 @@ func _init():
             print()
             # if !comp.done:
             #   break
-    call_deferred('quit')
+    print("tests complete")
+    quit()
+    # call_deferred('quit')
 
 func stack_assert(vm, matches, msg, clear= false):
     if not array_eq(vm.stack, matches):
@@ -88,6 +90,9 @@ func test_stack_basics(vm):
     vm.eval(":test :bar")
     stack_assert(vm, ["test", "bar"], "Can push strings", true)
 
+    vm.eval("1 2 2dup")
+    stack_assert(vm, [1,2,1,2], "Can 2dup", true)
+
 func test_arithmetic(vm):
     vm.eval("1 2 + 4 5 * 12 4 div 10 5 -")
     stack_assert(vm, [3, 20, 3, 5], "Basic arithmetic works")
@@ -108,7 +113,7 @@ func test_comparison(vm):
     stack_assert(vm, [false, true], "eq? works as expected", true)
 
 func test_def(vm):
-    vm.eval("def: add + ;")
+    vm.eval(": add ( a b -- c ) + ;")
     stack_assert(vm, [], "Defs do not leave garbage around", true)
     assert_("add" in vm.dict, "add not in dict")
 
@@ -116,14 +121,58 @@ func test_def(vm):
     stack_assert(vm, [3], "Defs persist", true)
     
 func test_locals(vm):
-    vm.eval("defl: test 1 =a 2 =b *a *b + ;")
+    vm.eval(":: test 1 =a 2 =b *a *b + ;")
     vm.eval("test")
     stack_assert(vm, [3], "locals work")
 
 func test_cond(vm):
-    vm.eval("0 0 eq? [ :true ] [ :false ] if-else")
+    vm.eval("true [ :true ] [ :false ] if-else")
     # vm.print_code()
     stack_assert(vm, ["true"], "Conditions work")
 
+func derp():
+    return true
+
+func pair(a, b):
+    return [a, b]
+
+func test_methods(vm):
+    vm.bind_instance(self)
+    vm.eval("self &derp()")
+    stack_assert(vm, [true], "No-arg method calls work", true)
+    vm.eval("self &pair( 1 2 )")
+    stack_assert(vm, [[1,2]], "Arg method calls work", true)
+
+const GDForth = preload("./GDForth.gd")
+
+func test_loop(vm):
+    vm.eval(": test-while 0 [ 1+ dup 1000 lt? ] while ;")
+    vm.eval(": test-each 0 1000 range [ 1+ ] each ;")
+    for i in 10:
+        var start = Time.get_ticks_usec()
+        vm.do("test-while")
+        var end = Time.get_ticks_usec()
+        print("While Loop took ", (end - start) / 1000.0, " msec")
+        # stack_assert(vm, [1000], "While looping", true)
+
+        start = Time.get_ticks_usec()
+        vm.do("test-each")
+        end = Time.get_ticks_usec()
+        print("Each Loop took ", (end - start) / 1000.0, " msec")
+
+        var gdf = GDForth.new()
+        gdf.load_script("""
+            :bench [ 0 swap range [ drop 1 + ] each drop ] def-evt
+            :bench-while [ 0 [ 1 + dup 1000 lt? ] while drop ] def-evt
+        """)
+        start = Time.get_ticks_usec()
+        gdf.evt_call("bench-while", 1000)
+        end = Time.get_ticks_usec()
+        print("Alpha while took ", (end-start)/1000.0, " msec")
+        start = Time.get_ticks_usec()
+        gdf.evt_call("bench", 1000)
+        end = Time.get_ticks_usec()
+        print("Alpha Each took ", (end-start)/1000.0, " msec")
+        print()
     
 
