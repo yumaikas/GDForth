@@ -1,6 +1,16 @@
 class_name GDForthVM extends Reference
 
 signal script_end
+signal eval_complete
+signal suspended
+signal do_print(item)
+signal do_error(err)
+
+class Util:
+    func v2(a, b):
+        return Vector2(a, b)
+
+var util = Util.new()
 
 var m
 var IP = -1
@@ -50,15 +60,29 @@ func _pop_special(symb):
         halt_fail()
         return {errSymb: "SPECIAL POP MISMATCH"}
 
+func do_printraw(toPrint):
+    print(toPrint)
+    emit_signal("do_print", toPrint)
+
+func do_print(toPrint):
+    do_printraw(toPrint)
+    do_printraw("\n")
+
+func do_push_error(err):
+    push_error(err)
+    emit_signal("do_error", err)
+
 func _has_prefix(word, pre):
     return typeof(word) == TYPE_STRING and word.begins_with(pre)
 
 func call_method(push_nulls=false):
     var on = _pop(); var name = _pop(); var margs = _pop().duplicate()
-    #print(on, name, margs, push_nulls)
+    #do_print(on, name, margs, push_nulls)
     _dispatch(on, name, margs, push_nulls)
 
 const argNames = ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"]
+
+
 
 # TODO: Event select via bound params used for "select context"
 # TODO: Blog about the return to GDForth Alpha
@@ -85,7 +109,7 @@ func _dispatch(on, name, margs, push_nulls = false):
         margs.append(on)
         if trace > 0:
             pass
-        print(toParse, anames, margs)
+        # do_print([toParse, anames, margs])
         var ret = expr.execute(margs)
 
         if ret != null or push_nulls:
@@ -95,6 +119,9 @@ func _dispatch(on, name, margs, push_nulls = false):
 const _stdlib = """
 : stop suspend ;
 : box 1 narray ;
+: nip swap drop ;
+: over shuf: ab aba ;
+: dup-under u< dup u> ;
 : if ( block -- quot/' ) [ ] if-else ;
 : {empty} 0 narray ;
 : { stack-size u< ;
@@ -104,8 +131,9 @@ const _stdlib = """
 : 2drop drop drop ;
 : ) stack-size u> - narray u> u> call-method ;
 : )? stack-size u> - narray u> u> call-method-null ;
-: nom u> 1- u< ( eat parameters into a method call ) ;
-: }: stack-size u> - narray /E swap &join( nom ) ;
+: nom u> 1 - u< ( eat parameters into a method call ) ;
+: }: stack-size u> - narray SP &join( nom ) ;
+: }ES: stack-size u> - narray SP &join( nom ) ;
 : not ( t/f -- f/t ) [ false ] [ true ] if-else ;
 : while ( block: ( -- t/f ) -- ..  ) l< l<here+ l@1 do-block l@ goto-if-true l> l> 2drop ;
 : each ( arr block -- .. ) 
@@ -116,7 +144,9 @@ const _stdlib = """
         l@2 l@1 nth l@3 do-block ( fetch element via arr & idx, exec block )
         l@1 1+ l!1  ( increment idx )
         l@2 len l@1 gt? l@ goto-if-true ( check if we need to continue )
+        l> l> 2drop
     ] if
+    l> l> 2drop
 ;
 
 """
@@ -128,7 +158,7 @@ func comp(script):
 
 func do(word, a0=null, a1=null, a2=null, a3=null, a4=null, a5=null, a6=null, a7=null, a8=null, a9=null):
     if not(word in dict):
-        push_error("Tried to do nonexistent word: ")
+        do_push_error("Tried to do nonexistent word: ")
         return
     var args = [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9]
     for a in args:
@@ -273,24 +303,24 @@ var decode_table = {}
 func print_code():
     var num_lits = 0
     var num_immediates = 0
-    print("[")
+    do_print("[")
     var idx = 0
     for o in CODE:
-        printraw(idx, ": ")
+        do_printraw(str(idx, ": "))
         idx += 1
         if num_lits > 0:
-            print("\t", constant_pool[o])
+            do_print(str("\t", constant_pool[o]))
             num_lits -= 1
         elif num_immediates > 0:
-            print("\t", o)
+            do_print(str("\t", o))
             num_immediates -= 1
         else:
-            print(decode_table[o])
+            do_print(decode_table[o])
             if o in lit_counts:
                 num_lits += lit_counts[o]
             if o in imm_counts:
                 num_immediates += imm_counts[o]
-    print("]")
+    do_print("]")
         
         
 func prep():
@@ -321,11 +351,13 @@ var _comp_map = {
     "eq?": OP_EQ,
     "true": [OP_LIT, assoc_constant(true)],
     "false": [OP_LIT, assoc_constant(false)],
-    "/S": [OP_LIT, assoc_constant(" ")],
-    "/T": [OP_LIT, assoc_constant("\t")],
-    "/R": [OP_LIT, assoc_constant("\r")],
-    "/N": [OP_LIT, assoc_constant("\n")],
-    "/E": [OP_LIT, assoc_constant("")],
+    "null": [OP_LIT, assoc_constant(null)],
+    "util": [OP_LIT, assoc_constant(util)],
+    "SP": [OP_LIT, assoc_constant(" ")],
+    "TAB": [OP_LIT, assoc_constant("\t")],
+    "CR": [OP_LIT, assoc_constant("\r")],
+    "NL": [OP_LIT, assoc_constant("\n")],
+    "ES": [OP_LIT, assoc_constant("")],
     "1+": [OP_LIT, assoc_constant(1), OP_ADD],
     "1-": [OP_LIT, assoc_constant(1), OP_SUB],
     "if-else": OP_IF_ELSE,
@@ -365,6 +397,16 @@ func compile(tokens):
             CODE.append(OP_GET_MEMBER)
             CODE.append(assoc_constant(tok.substr(1)))
             t_idx+=1
+        elif tok.begins_with(">"):
+            CODE.append(OP_SET_MEMBER)
+            CODE.append(assoc_constant(tok.substr(1)))
+            t_idx+=1
+        elif tok.begins_with(">>"):
+            CODE.append_array([
+                OP_U_PUSH, OP_DUP, OP_U_POP, # ab -- aab
+                OP_SET_MEMBER, CODE.append(assoc_constant(tok.substr(1)))
+            ])
+            t_idx+=1
         elif tok.begins_with("&"):
             if tok.ends_with("("):
                 _comp_method_setup(tok.substr(1, len(tok)-2))
@@ -376,7 +418,7 @@ func compile(tokens):
                 t_idx+=1
             else:
                 var err = str("Could not compile ", tok, " as a call")
-                push_error(err)
+                do_push_error(err)
                 return { "err": err }
         elif tok.begins_with("%"):
             CODE.append_array([
@@ -393,7 +435,7 @@ func compile(tokens):
 #                t_idx+=1
 #            else:
 #                var err = str("Could not compile ", tok, " as a valid argument get")
-#                push_error(err)
+#                do_push_error(err)
 #                return { "err": err }
         elif tok.begins_with(":") and tok != ":" and tok != "::":
             CODE.append_array([OP_LIT, assoc_constant(tok.substr(1))])
@@ -422,7 +464,7 @@ func compile(tokens):
             while tokens[SEEK] != ";":
                 if tokens[SEEK] in [":", "::", "evt:", "evtl:"]:
                     var err = str("Cannot nest `", tok, "`, while defining '", name, "'")
-                    push_error(err)
+                    do_push_error(err)
                     return { "err": err }
                 SEEK += 1
             # Create a 
@@ -456,7 +498,7 @@ func compile(tokens):
                 elif tokens[SEEK] == "]": DEPTH -= 1
                 if SEEK > len(tokens):
                     var err = str("Unmatched [")
-                    push_error(err)
+                    do_push_error(err)
                     return {"err": err}
                 SEEK += 1
 
@@ -476,7 +518,7 @@ func compile(tokens):
                 elif tokens[SEEK] == ")": DEPTH -= 1
                 if SEEK > len(tokens):
                     var err = str("Unmatched (")
-                    push_error(err)
+                    do_push_error(err)
                     return {"err": err}
                 SEEK += 1
             t_idx = SEEK
@@ -500,16 +542,17 @@ func compile(tokens):
             t_idx += 1
         else:
             var err = str("Unrecognized command: ", tok)
-            print(_comp_map.keys())
-            print(dict.keys())
-            push_error(err)
+            do_print(str(_comp_map.keys()))
+            do_print(str(dict.keys()))
+            do_push_error(err)
             return {"err": err}
     return {}
 
 func exec():
-    if stop == false:
-        push_error("Re-entered exec without halting properly!")
-        return
+    # TODO: Enable this for non-interactive mode?
+    #if stop == false:
+    #    do_push_error("Re-entered exec without halting properly!")
+    #    return
     stop = false
     var oldip = IP
     while IP < len(CODE) and not stop:
@@ -520,7 +563,7 @@ func exec():
 #                printraw(constant_pool[CODE[IP+i+1]])
 #                if i+1 < lit_counts[CODE[IP]]:
 #                    printraw(", ")
-#        print()
+#        do_print()
 
                 
         var inst = CODE[IP]
@@ -574,16 +617,16 @@ func exec():
             IP += 1
         elif inst == OP_WAIT:
             if in_evt:
-                print("ERROR: suspended in evt_call!")
+                do_print("ERROR: suspended in evt_call!")
                 halt_fail()
                 return
             var obj = _pop()
             var sig = constant_pool[CODE[IP+1]]
             if not obj.is_connected(sig, self, "sig_resume"):
-                if trace > 0: print("connecting")
+                if trace > 0: do_print("connecting")
                 obj.connect(sig, self, "sig_resume", [], CONNECT_ONESHOT | CONNECT_DEFERRED)
             else:
-                print(str("Already connected to ", obj))
+                do_print(str("Already connected to ", obj))
             stop = true
             IP += 2
         elif inst == OP_SHUFFLE:
@@ -608,7 +651,7 @@ func exec():
             var lbl = _pop()
             IP = lbl
         elif inst == OP_GET_MEMBER:
-            _push(instance.get(constant_pool[CODE[IP+1]]))
+            _push(_pop().get(constant_pool[CODE[IP+1]]))
             IP += 2
         elif inst == OP_DEF:
             var block = _pop()
@@ -616,7 +659,9 @@ func exec():
             dict[name] = block
             IP += 1
         elif inst == OP_SET_MEMBER:
-            instance.set(constant_pool[CODE[IP+1]], _pop())
+            var to = _pop()
+            var on = _pop()
+            on.set(constant_pool[CODE[IP+1]], to)
             IP += 2
         elif inst == OP_SELF:
             _push(instance)
@@ -650,15 +695,17 @@ func exec():
                 top.invert(); _push(top)
             IP += 1
         elif inst == OP_PRINT:
-            print(_pop())
+            do_print(_pop())
             IP += 1
         elif inst == OP_SUSPEND:
             stop = true
             IP += 1
+            emit_signal("suspended")
             break
         elif inst == OP_END_EVAL:
             stop = true
             IP = _r_pop()
+            emit_signal("eval_complete")
             break
         elif inst == OP_NTH:
             var at = _pop(); var arr = _pop();
@@ -747,10 +794,10 @@ func exec():
             IP += 1
         elif inst == OP_EQ:
             var b = _pop(); var a = _pop();
-            _push(a == b)
+            _push(typeof(a) == typeof(b) and a == b)
             IP += 1
         elif inst == OP_PRINT:
-            print(_pop())
+            do_print(_pop())
             IP += 1
         elif inst == OP_LEN:
             _push(len(_pop()))
@@ -761,7 +808,7 @@ func exec():
         
         else:
             halt_fail()
-            print("Unknown opcode: ", inst, " at ", IP)
+            do_print(str("Unknown opcode: ", inst, " at ", IP))
     stop = true
 
             

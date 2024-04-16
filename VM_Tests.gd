@@ -175,8 +175,8 @@ func test_loop(vm):
         print("Alpha Each took ", (end-start)/1000.0, " msec")
         print()
     
-func test_strings(vm):
-    vm.eval("{ :Foo /S :BAR /T :baz }:")
+func __test_strings(vm):
+    vm.eval("/E { :Foo /S :BAR /T :baz } &join( nom )")
     stack_assert(vm, ["Foo BAR\tbaz"], true)
 
 func _ignore_test_classdb(vm):
