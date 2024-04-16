@@ -159,6 +159,7 @@ func on_eval_text(text):
     else:
         outputLbl.bbcode_text = "Running..."
         forth.eval(text)
+        edit.select_all()
 
 
     
