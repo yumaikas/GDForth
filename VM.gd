@@ -72,17 +72,20 @@ func _dispatch(on, name, margs, push_nulls = false):
             _push(ret)
     else:
         var expr = Expression.new()
-        var anames = argNames.slice(0, len(margs))
-        anames.append("m")
+        var anames = argNames.slice(0, len(margs) - 1)
+        if len(margs) == 0:
+            anames = []
         var toParse = str("m.", name,"(", ", ".join(anames), ")")
+        anames.append("m")
         if expr.parse(toParse, anames) != OK:
             stop = true
             is_error = true
+            return
 
         margs.append(on)
         if trace > 0:
             pass
-            #print(toParse, anames, margs)
+        print(toParse, anames, margs)
         var ret = expr.execute(margs)
 
         if ret != null or push_nulls:
@@ -102,6 +105,7 @@ const _stdlib = """
 : ) stack-size u> - narray u> u> call-method ;
 : )? stack-size u> - narray u> u> call-method-null ;
 : nom u> 1- u< ( eat parameters into a method call ) ;
+: }: stack-size u> - narray /E swap &join( nom ) ;
 : not ( t/f -- f/t ) [ false ] [ true ] if-else ;
 : while ( block: ( -- t/f ) -- ..  ) l< l<here+ l@1 do-block l@ goto-if-true l> l> 2drop ;
 : each ( arr block -- .. ) 
@@ -317,11 +321,17 @@ var _comp_map = {
     "eq?": OP_EQ,
     "true": [OP_LIT, assoc_constant(true)],
     "false": [OP_LIT, assoc_constant(false)],
+    "/S": [OP_LIT, assoc_constant(" ")],
+    "/T": [OP_LIT, assoc_constant("\t")],
+    "/R": [OP_LIT, assoc_constant("\r")],
+    "/N": [OP_LIT, assoc_constant("\n")],
+    "/E": [OP_LIT, assoc_constant("")],
     "1+": [OP_LIT, assoc_constant(1), OP_ADD],
     "1-": [OP_LIT, assoc_constant(1), OP_SUB],
     "if-else": OP_IF_ELSE,
     "do-block": OP_DO_BLOCK,
     "_s": OP_PRINT_STACK,
+    "class-db": [OP_LIT,assoc_constant(ClassDB)],
     "goto-if-true": OP_GOTO_WHEN_TRUE,
     "u<": OP_U_PUSH, "u>": OP_U_POP, "u@": OP_U_FETCH,
     "l<": OP_L_PUSH, "l>": OP_L_POP, "l@": OP_L_FETCH,
@@ -354,18 +364,6 @@ func compile(tokens):
         if tok.begins_with("."):
             CODE.append(OP_GET_MEMBER)
             CODE.append(assoc_constant(tok.substr(1)))
-            t_idx+=1
-        elif tok.begins_with(":@"):
-            if tok.ends_with("("):
-                _comp_method_setup( tok.substr(2, len(tok)-3))
-            elif tok.ends_with("()"):
-                CODE.append_array([
-                    OP_CALL_METHOD_LIT, assoc_constant(tok.substr(2, len(tok)-4))
-                ])
-            else:
-                var err = str("Could not compile ", tok, " as a call")
-                push_error(err)
-                return { "err": err }
             t_idx+=1
         elif tok.begins_with("&"):
             if tok.ends_with("("):

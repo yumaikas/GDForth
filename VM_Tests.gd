@@ -148,7 +148,7 @@ const GDForth = preload("./GDForth.gd")
 func test_loop(vm):
     vm.eval(": test-while 0 [ 1+ dup 1000 lt? ] while ;")
     vm.eval(": test-each 0 1000 range [ 1+ ] each ;")
-    for i in 10:
+    for i in 1:
         var start = Time.get_ticks_usec()
         vm.do("test-while")
         var end = Time.get_ticks_usec()
@@ -175,4 +175,10 @@ func test_loop(vm):
         print("Alpha Each took ", (end-start)/1000.0, " msec")
         print()
     
+func test_strings(vm):
+    vm.eval("{ :Foo /S :BAR /T :baz }:")
+    stack_assert(vm, ["Foo BAR\tbaz"], true)
+
+func _ignore_test_classdb(vm):
+    vm.eval("class-db &get_class_list() [ print ] each")
 
