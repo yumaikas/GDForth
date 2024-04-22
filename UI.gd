@@ -1,6 +1,5 @@
 class_name GDForthUI extends SceneTree
 
-
 var outputLbl
 var edit
 var forth = preload("./VM.gd").new()
@@ -162,4 +161,3 @@ func on_eval_text(text):
         edit.select_all()
 
 
-    

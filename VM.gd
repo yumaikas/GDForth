@@ -13,7 +13,8 @@ class Util:
 var util = Util.new()
 
 var m
-var IP = -1
+var IP = -1 
+
 var trace = 0; var trace_indent = false
 var stack = []; 
 var utilStack = []; 
@@ -61,7 +62,7 @@ func _pop_special(symb):
         return {errSymb: "SPECIAL POP MISMATCH"}
 
 func do_printraw(toPrint):
-    print(toPrint)
+    printraw(toPrint)
     emit_signal("do_print", toPrint)
 
 func do_print(toPrint):
@@ -83,15 +84,12 @@ func call_method(push_nulls=false):
 const argNames = ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"]
 
 
-
 # TODO: Event select via bound params used for "select context"
 # TODO: Blog about the return to GDForth Alpha
 
 func _dispatch(on, name, margs, push_nulls = false):
     if typeof(on) == TYPE_OBJECT:
-        var fn = funcref(on, name)
-        var ret = fn.call_funcv(margs)
-        on.callv(name, margs)
+        var ret = on.callv(name, margs)
         if ret != null or push_nulls:
             _push(ret)
     else:
@@ -133,8 +131,14 @@ const _stdlib = """
 : )? stack-size u> - narray u> u> call-method-null ;
 : nom u> 1 - u< ( eat parameters into a method call ) ;
 : }: stack-size u> - narray SP &join( nom ) ;
-: }ES: stack-size u> - narray SP &join( nom ) ;
+: }ES: stack-size u> - narray ES &join( nom ) ;
 : not ( t/f -- f/t ) [ false ] [ true ] if-else ;
+: WRITE 2 ;
+: READ 1 ;
+: OK 0 ;
+:: load ( path -- .. ) =path File &new() =f 
+    *f &open( *path READ ) dup OK eq? [ drop *f &get_as_text() eval OK ] if ;
+
 : while ( block: ( -- t/f ) -- ..  ) l< l<here+ l@1 do-block l@ goto-if-true l> l> 2drop ;
 : each ( arr block -- .. ) 
     l< l< ( l: block arr )
@@ -157,8 +161,9 @@ func comp(script):
     return compile(toks)
 
 func do(word, a0=null, a1=null, a2=null, a3=null, a4=null, a5=null, a6=null, a7=null, a8=null, a9=null):
+    print("do, IP at: ", IP)
     if not(word in dict):
-        do_push_error("Tried to do nonexistent word: ")
+        do_push_error(str("Tried to do nonexistent word: ", word))
         return
     var args = [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9]
     for a in args:
@@ -170,12 +175,19 @@ func do(word, a0=null, a1=null, a2=null, a3=null, a4=null, a5=null, a6=null, a7=
     _r_push(0)
     IP = dict[word]
     exec()
+    print("stop-do, IP at: ", IP)
 
 func eval(script):
     _r_push(IP)
     IP = len(CODE)
     comp(script)
     CODE.append(OP_END_EVAL)
+    exec()
+
+func _eval_(script):
+    _r_push(IP)
+    IP = len(CODE)
+    comp(script)
     exec()
 
 
@@ -228,10 +240,13 @@ var OP_GE = iota()
 var OP_LT = iota()
 var OP_LE = iota()
 var OP_EQ = iota()
+var OP_AND = iota()
+var OP_OR = iota()
 
 var OP_LIT = iota(1)
 var OP_BLOCK_LIT = iota(2)
 var OP_GOTO = iota(1)
+var OP_EVAL = iota()
 
 var OP_GET_MEMBER = iota(1)
 var OP_SET_MEMBER = iota(1)
@@ -259,8 +274,10 @@ var OP_CALL_METHOD_NULL = iota()
 var OP_CALL_METHOD_LIT = iota(1)
 
 var OP_NARRAY = iota()
+var OP_NEW_DICT = iota()
 
 var OP_NTH = iota()
+var OP_PUT = iota()
 var OP_LEN = iota()
 
 var OP_SETLOCAL = iota(1)
@@ -282,6 +299,10 @@ var OP_DROP_SCOPE = iota()
 var OP_SUSPEND = iota()
 var OP_END_EVAL = iota()
 var OP_WAIT = iota(1)
+
+var OP_THROW = iota()
+var OP_RECOVER = iota()
+var OP_RESET = iota()
 
 var OP_STACK_SIZE = iota()
 var OP_VM = iota()
@@ -349,19 +370,28 @@ var _comp_map = {
     "+": OP_ADD, "-": OP_SUB, "*": OP_MUL, "div": OP_DIV,
     "lt?": OP_LT, "le?": OP_LE, "gt?": OP_GT, "ge?": OP_GE,
     "eq?": OP_EQ,
+    "and": OP_AND,
+    "or": OP_OR,
     "true": [OP_LIT, assoc_constant(true)],
     "false": [OP_LIT, assoc_constant(false)],
     "null": [OP_LIT, assoc_constant(null)],
     "util": [OP_LIT, assoc_constant(util)],
     "SP": [OP_LIT, assoc_constant(" ")],
+    "DQ": [OP_LIT, assoc_constant('"')],
+    "SQ": [OP_LIT, assoc_constant("'")],
     "TAB": [OP_LIT, assoc_constant("\t")],
     "CR": [OP_LIT, assoc_constant("\r")],
     "NL": [OP_LIT, assoc_constant("\n")],
     "ES": [OP_LIT, assoc_constant("")],
     "1+": [OP_LIT, assoc_constant(1), OP_ADD],
     "1-": [OP_LIT, assoc_constant(1), OP_SUB],
+    "File": [OP_LIT, assoc_constant(File)],
+    "eval": OP_EVAL,
     "if-else": OP_IF_ELSE,
     "do-block": OP_DO_BLOCK,
+    "throw": OP_THROW,
+    "recover-vm": OP_RECOVER,
+    "reset-vm": OP_RESET,
     "_s": OP_PRINT_STACK,
     "class-db": [OP_LIT,assoc_constant(ClassDB)],
     "goto-if-true": OP_GOTO_WHEN_TRUE,
@@ -374,8 +404,10 @@ var _comp_map = {
     "call-method-null": OP_CALL_METHOD_NULL,
     "clear-stack": OP_STACK_CLEAR,
     "def": OP_DEF,
-    "get": OP_NTH,
     "narray": OP_NARRAY,
+    "dict": OP_NEW_DICT,
+    "put": OP_PUT,
+    "get": OP_NTH,
     "nth": OP_NTH,
     "print": OP_PRINT,
     "range": OP_RANGE,
@@ -548,28 +580,59 @@ func compile(tokens):
             return {"err": err}
     return {}
 
+func sig_resume(a0=null, a1=null, a2=null, a3=null, a4=null, a5=null, a6=null, a7=null, a8=null, a9=null):
+    # print("SIG IP AT", IP)
+    var args = [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9]
+    # print(args)
+    for a in args:
+        if a != null:
+            _push(a)
+        else:
+            break
+    exec()
+
 func exec():
+
+    # print("EXEC IP AT", IP)
     # TODO: Enable this for non-interactive mode?
+    if CODE[IP] == OP_RECOVER:
+        do_print("OP_RECOVER")
+        is_error = false
+        stop = false
+        IP += 1
+    if is_error == true:
+        do_push_error("Tried to re-run failed VM with no recover")
     #if stop == false:
     #    do_push_error("Re-entered exec without halting properly!")
     #    return
     stop = false
     var oldip = IP
     while IP < len(CODE) and not stop:
-#        printraw(decode_table[CODE[IP]])
+#        if CODE[IP] in decode_table:
+#            do_printraw(decode_table[CODE[IP]])
+#        else:
+#            do_printraw("IP@: " + str(CODE[IP]))
 #        if CODE[IP] in lit_counts:
-#            printraw(": ")
+#            do_printraw(": ")
 #            for i in lit_counts[CODE[IP]]:
-#                printraw(constant_pool[CODE[IP+i+1]])
+#                do_printraw(constant_pool[CODE[IP+i+1]])
 #                if i+1 < lit_counts[CODE[IP]]:
-#                    printraw(", ")
-#        do_print()
-
+#                    do_printraw(", ")
+#        if CODE[IP] in imm_counts:
+#            do_printraw(": ")
+#            for i in imm_counts[CODE[IP]]:
+#                do_printraw(CODE[IP+i+1])
+#                if i+1 < imm_counts[CODE[IP]]:
+#                    do_printraw(", ")
+#
+        # do_printraw(" S: " + str(stack)+" ")
+        # do_print("")
                 
         var inst = CODE[IP]
 
         if inst == OP_LIT:
-            _push(constant_pool[CODE[IP+1]]); IP += 2
+            _push(constant_pool[CODE[IP+1]])
+            IP += 2
         elif inst == OP_CALL:
             _r_push(IP+2)
             IP = CODE[IP+1]
@@ -616,6 +679,7 @@ func exec():
             _l_push(IP+1)
             IP += 1
         elif inst == OP_WAIT:
+            # print("WAIT IP AT", IP)
             if in_evt:
                 do_print("ERROR: suspended in evt_call!")
                 halt_fail()
@@ -629,6 +693,24 @@ func exec():
                 do_print(str("Already connected to ", obj))
             stop = true
             IP += 2
+            # print("WAIT IP AT", IP)
+        elif inst == OP_THROW:
+            var maybe_err = _pop()
+            if not (typeof(maybe_err) == typeof(OK) and maybe_err == OK):
+                halt_fail()
+                return
+            else:
+                IP += 1
+        elif inst == OP_RECOVER:
+            do_print("Recover is a no-op outside resuming a faulted VM")
+            IP += 1
+        elif inst == OP_RESET:
+            stack = []; 
+            utilStack = []; 
+            returnStack = []; 
+            loopStack = [];
+            locals = {}
+            IP += 1
         elif inst == OP_SHUFFLE:
             var shuf_locals = {}
             var input = constant_pool[CODE[IP+1]]
@@ -663,6 +745,12 @@ func exec():
             var on = _pop()
             on.set(constant_pool[CODE[IP+1]], to)
             IP += 2
+        elif inst == OP_PUT:
+            var at = _pop()
+            var on = _pop()
+            var to = _pop()
+            on[at] = to
+            IP += 1
         elif inst == OP_SELF:
             _push(instance)
             IP += 1
@@ -694,6 +782,9 @@ func exec():
                 for i in n: top.append(_pop())
                 top.invert(); _push(top)
             IP += 1
+        elif inst == OP_NEW_DICT:
+            _push({})
+            IP += 1
         elif inst == OP_PRINT:
             do_print(_pop())
             IP += 1
@@ -702,6 +793,9 @@ func exec():
             IP += 1
             emit_signal("suspended")
             break
+        elif inst == OP_EVAL:
+            _r_push(IP+1)
+            _eval_(_pop())
         elif inst == OP_END_EVAL:
             stop = true
             IP = _r_pop()
@@ -796,6 +890,14 @@ func exec():
             var b = _pop(); var a = _pop();
             _push(typeof(a) == typeof(b) and a == b)
             IP += 1
+        elif inst == OP_AND:
+            var b = _pop(); var a = _pop();
+            _push(a and b)
+            IP += 1
+        elif inst == OP_OR:
+            var b = _pop(); var a = _pop();
+            _push(a or b)
+            IP += 1
         elif inst == OP_PRINT:
             do_print(_pop())
             IP += 1
@@ -805,11 +907,13 @@ func exec():
         elif inst == OP_RANGE:
             _push(range(_pop()))
             IP += 1
-        
         else:
-            halt_fail()
+            stop = true
+            #print_code()
+            print(returnStack, " ", IP)
             do_print(str("Unknown opcode: ", inst, " at ", IP))
     stop = true
+    emit_signal("script_end")
 
             
         
