@@ -16,13 +16,10 @@
 :: get-link ( line -- link ) =l
     *l &find( :"class ) 1+ =from
     *l &find_last( DQ ) *from - =len
-    
     *l &substr( *from *len )
 ;
 
-: u@class-link? ( str -- ? ) 
-    u@ :toctree-l1 str-in? 
-    u@ :class_ str-in? and ;
+: u@class-link? ( str -- ? ) u@ :toctree-l1 str-in? u@ :class_ str-in? and ;
     
 
  { index-body &split( NL ) [ u< u@class-link? [ u> get-link ] [ u> drop ] if-else ] each }

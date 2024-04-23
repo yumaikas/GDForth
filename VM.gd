@@ -136,6 +136,7 @@ const _stdlib = """
 : WRITE 2 ;
 : READ 1 ;
 : OK 0 ;
+: print-raw ( toprint -- ) VM &do_printraw( nom ) ;
 :: load ( path -- .. ) =path File &new() =f 
     *f &open( *path READ ) dup OK eq? [ drop *f &get_as_text() eval OK ] if ;
 
@@ -452,15 +453,6 @@ func compile(tokens):
                 var err = str("Could not compile ", tok, " as a call")
                 do_push_error(err)
                 return { "err": err }
-        elif tok.begins_with("%"):
-            CODE.append_array([
-                OP_LIT,
-                0, # Replaced below
-                OP_SETLOCAL,
-                assoc_constant(tok.substr(1))
-            ])
-            CODE[len(CODE)-3] = assoc_constant(len(CODE))
-            t_idx+=1
 #        elif tok.begins_with("$"):
 #            if tok.substr(1) in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]:
 #                CODE.append_array([ OP_GETARG, int(tok.substr(1)) ])
@@ -477,6 +469,13 @@ func compile(tokens):
             t_idx+=1
         elif tok.begins_with("*") and tok != '*':
             CODE.append_array([OP_GETLOCAL, assoc_constant(tok.substr(1))])
+            t_idx += 1
+        elif tok.begins_with("%") and tok != '%':
+            CODE.append_array([
+                OP_GETLOCAL, assoc_constant(tok.substr(1)),
+                OP_SWAP, OP_DO_BLOCK,
+                OP_SETLOCAL, assoc_constant(tok.substr(1))
+            ])
             t_idx += 1
         elif tok.begins_with("="):
             CODE.append_array([OP_SETLOCAL, assoc_constant(tok.substr(1))])
