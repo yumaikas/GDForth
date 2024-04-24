@@ -119,6 +119,7 @@ const _stdlib = """
 : box 1 narray ;
 : nip swap drop ;
 : over shuf: ab aba ;
+: rot shuf: abc bca ;
 : dup-under u< dup u> ;
 : if ( block -- quot/' ) [ ] if-else ;
 : {empty} 0 narray ;
@@ -127,6 +128,7 @@ const _stdlib = """
 : 2dup shuf: ab abab ;
 : pos? 0 gt? ;
 : 2drop drop drop ;
+: 3drop drop drop drop ;
 : ) stack-size u> - narray u> u> call-method ;
 : )? stack-size u> - narray u> u> call-method-null ;
 : nom u> 1 - u< ( eat parameters into a method call ) ;
@@ -152,6 +154,11 @@ const _stdlib = """
         l> l> 2drop
     ] if
     l> l> 2drop
+;
+: times ( num block -- ..  ) 
+    ( setup )    l< l< l<here+ ( block num here )
+    ( iterate )  l@1 pos? [ l@2 do-block l@1 1- l!1 ] if l@1 pos? l@ goto-if-true 
+    ( teardown ) l> l> l> 3drop 
 ;
 
 """
@@ -383,6 +390,7 @@ var _comp_map = {
     "TAB": [OP_LIT, assoc_constant("\t")],
     "CR": [OP_LIT, assoc_constant("\r")],
     "NL": [OP_LIT, assoc_constant("\n")],
+    "COLON": [OP_LIT, assoc_constant(":")],
     "ES": [OP_LIT, assoc_constant("")],
     "1+": [OP_LIT, assoc_constant(1), OP_ADD],
     "1-": [OP_LIT, assoc_constant(1), OP_SUB],

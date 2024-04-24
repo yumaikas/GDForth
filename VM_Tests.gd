@@ -145,7 +145,15 @@ func test_methods(vm):
 
 const GDForth = preload("./GDForth.gd")
 
-func test_loop(vm):
+func test_loop(vm): 
+    vm.eval(" 0 [ 1+ dup 10 lt? ] while")
+    stack_assert(vm, [10], "while works",  true)
+    vm.eval("0 10 range [ drop 1+ ] each")
+    stack_assert(vm, [10],  "each works", true)
+    vm.eval("0 10 [ 1+ ] times")
+    stack_assert(vm, [10], "times works", true)
+
+func bench_loop(vm):
     vm.eval(": test-while 0 [ 1+ dup 1000 lt? ] while ;")
     vm.eval(": test-each 0 1000 range [ 1+ ] each ;")
     for i in 1:
@@ -175,8 +183,8 @@ func test_loop(vm):
         print("Alpha Each took ", (end-start)/1000.0, " msec")
         print()
     
-func __test_strings(vm):
-    vm.eval("/E { :Foo /S :BAR /T :baz } &join( nom )")
+func test_strings(vm):
+    vm.eval("{ :Foo SP :BAR TAB :baz }ES:")
     stack_assert(vm, ["Foo BAR\tbaz"], true)
 
 func _ignore_test_classdb(vm):
