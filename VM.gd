@@ -26,7 +26,7 @@ var constant_pool = []
 var evts = {};
 var stop = true; var is_error = false
 var in_exec = false
-var CODE = PoolIntArray()
+var CODE = []
 var errSymb = {}; var lblSymb = {}; var iterSymb = {}; var prevSymb = {}
 var in_evt = false
 var instance
@@ -234,124 +234,117 @@ func tokenize(script):
     
 
 var lit_counts = {}
-var _iota = 0
-
 var imm_counts = {}
 
-func imm(imm_count=0):
-    _iota += 1
+func imm(name, imm_count=0):
+    var ret = funcref(self, name)
 
     if imm_count != 0:
-        imm_counts[_iota] = imm_count
+        imm_counts[ret] = imm_count
 
-    return _iota
+    return ret
 
 
-func iota(lit_count=0):
-    _iota += 1
+func iota(name, lit_count=0):
+    var ret = funcref(self, name)
 
     if lit_count != 0:
-        lit_counts[_iota] = lit_count
+        lit_counts[ret] = lit_count
 
-    return _iota
+    return ret
 
-func lit_count(n):
-    lit_counts[_iota] = n
+var OP_ADD = iota("OP_ADD")
+var OP_SUB = iota("OP_SUB")
+var OP_MUL = iota("OP_MUL")
+var OP_DIV = iota("OP_DIV")
 
-var OP_ADD = iota()
-var OP_SUB = iota()
-var OP_MUL = iota()
-var OP_DIV = iota()
+var OP_GT = iota("OP_GT")
+var OP_GE = iota("OP_GE")
+var OP_LT = iota("OP_LT")
+var OP_LE = iota("OP_LE")
+var OP_EQ = iota("OP_EQ")
+var OP_AND = iota("OP_AND")
+var OP_OR = iota("OP_OR")
 
-var OP_GT = iota()
-var OP_GE = iota()
-var OP_LT = iota()
-var OP_LE = iota()
-var OP_EQ = iota()
-var OP_AND = iota()
-var OP_OR = iota()
+var OP_LIT = iota("OP_LIT", 1)
+var OP_BLOCK_LIT = iota("OP_BLOCK_LIT", 2)
+var OP_GOTO = iota("OP_GOTO", 1)
+var OP_EVAL = iota("OP_EVAL")
 
-var OP_LIT = iota(1)
-var OP_BLOCK_LIT = iota(2)
-var OP_GOTO = iota(1)
-var OP_EVAL = iota()
+var OP_GET_MEMBER = iota("OP_GET_MEMBER", 1)
+var OP_SET_MEMBER = iota("OP_SET_MEMBER", 1)
 
-var OP_GET_MEMBER = iota(1)
-var OP_SET_MEMBER = iota(1)
+var OP_DEF = iota("OP_DEF")
 
-var OP_DEF = iota()
+var OP_U_PUSH = iota("OP_U_PUSH")
+var OP_U_POP = iota("OP_U_POP")
+var OP_U_FETCH = iota("OP_U_FETCH")
+var OP_U_FETCH_1 = iota("OP_U_FETCH_1")
+var OP_U_FETCH_2 = iota("OP_U_FETCH_2")
+var OP_U_STORE = iota("OP_U_STORE")
+var OP_U_STORE_1 = iota("OP_U_STORE_1")
+var OP_U_STORE_2 = iota("OP_U_STORE_2")
+var OP_L_PUSH = iota("OP_L_PUSH")
+var OP_L_POP = iota("OP_L_POP")
+var OP_L_FETCH = iota("OP_L_FETCH")
+var OP_L_FETCH_1 = iota("OP_L_FETCH_1")
+var OP_L_FETCH_2 = iota("OP_L_FETCH_2")
+var OP_L_FETCH_3 = iota("OP_L_FETCH_3")
+var OP_L_STORE = iota("OP_L_STORE")
+var OP_L_STORE_1 = iota("OP_L_STORE_1")
+var OP_L_STORE_2 = iota("OP_L_STORE_2")
+var OP_L_STORE_3 = iota("OP_L_STORE_3")
+var OP_L_HERE_NEXT = iota("OP_L_HERE_NEXT")
 
-var OP_U_PUSH = iota() 
-var OP_U_POP = iota()
-var OP_U_FETCH = iota()
-var OP_U_FETCH_1 = iota()
-var OP_U_FETCH_2 = iota()
-var OP_U_STORE = iota()
-var OP_U_STORE_1 = iota()
-var OP_U_STORE_2 = iota()
-var OP_L_PUSH = iota() 
-var OP_L_POP = iota()
-var OP_L_FETCH = iota()
-var OP_L_FETCH_1 = iota()
-var OP_L_FETCH_2 = iota()
-var OP_L_FETCH_3 = iota()
-var OP_L_STORE = iota()
-var OP_L_STORE_1 = iota()
-var OP_L_STORE_2 = iota()
-var OP_L_STORE_3 = iota()
-var OP_L_HERE_NEXT = iota()
+var OP_STACK_CLEAR = iota("OP_STACK_CLEAR")
+var OP_CALL_METHOD = iota("OP_CALL_METHOD")
+var OP_CALL_METHOD_NULL = iota("OP_CALL_METHOD_NULL")
+var OP_CALL_METHOD_LIT = iota("OP_CALL_METHOD_LIT", 1)
 
-var OP_STACK_CLEAR = iota()
-var OP_CALL_METHOD = iota()
-var OP_CALL_METHOD_NULL = iota()
-var OP_CALL_METHOD_LIT = iota(1)
+var OP_NARRAY = iota("OP_NARRAY")
+var OP_NEW_DICT = iota("OP_NEW_DICT")
 
-var OP_NARRAY = iota()
-var OP_NEW_DICT = iota()
+var OP_NTH = iota("OP_NTH")
+var OP_PUT = iota("OP_PUT")
+var OP_LEN = iota("OP_LEN")
 
-var OP_NTH = iota()
-var OP_PUT = iota()
-var OP_LEN = iota()
+var OP_SETLOCAL = iota("OP_SETLOCAL", 1)
+var OP_GETLOCAL = iota("OP_GETLOCAL", 1)
 
-var OP_SETLOCAL = iota(1)
-var OP_GETLOCAL = iota(1)
+var OP_PRINT = iota("OP_PRINT")
+var OP_PRINT_STACK = iota("OP_PRINT_STACK")
 
-var OP_PRINT = iota()
-var OP_PRINT_STACK = iota()
+var OP_IF_ELSE = iota("OP_IF_ELSE")
+var OP_WHILE = iota("OP_WHILE")
+var OP_GOTO_WHEN_TRUE = iota("OP_GOTO_WHEN_TRUE")
 
-var OP_IF_ELSE = iota()
-var OP_WHILE = iota()
-var OP_GOTO_WHEN_TRUE = iota()
+var OP_DUP = iota("OP_DUP")
+var OP_DROP = iota("OP_DROP")
+var OP_SWAP = iota("OP_SWAP")
 
-var OP_DUP = iota()
-var OP_DROP = iota()
-var OP_SWAP = iota()
+var OP_PUSH_SCOPE = iota("OP_PUSH_SCOPE")
+var OP_DROP_SCOPE = iota("OP_DROP_SCOPE")
 
-var OP_PUSH_SCOPE = iota()
-var OP_DROP_SCOPE = iota()
+var OP_SUSPEND = iota("OP_SUSPEND")
+var OP_END_EVAL = iota("OP_END_EVAL")
+var OP_WAIT = iota("OP_WAIT", 1)
 
-var OP_SUSPEND = iota()
-var OP_END_EVAL = iota()
-var OP_WAIT = iota(1)
+var OP_THROW = iota("OP_THROW")
+var OP_RECOVER = iota("OP_RECOVER")
+var OP_RESET = iota("OP_RESET")
 
-var OP_THROW = iota()
-var OP_RECOVER = iota()
-var OP_RESET = iota()
+var OP_STACK_SIZE = iota("OP_STACK_SIZE")
+var OP_VM = iota("OP_VM")
+var OP_SELF = iota("OP_SELF")
 
-var OP_STACK_SIZE = iota()
-var OP_VM = iota()
-var OP_SELF = iota()
+var OP_RETURN = iota("OP_RETURN")
+var OP_DO_BLOCK = iota("OP_DO_BLOCK")
+var OP_CALL = imm("OP_CALL", 1)
+var OP_SHUFFLE = iota("OP_SHUFFLE",2)
+var OP_SET_SCOPE = iota("OP_SET_SCOPE")
+var OP_GET_SCOPE = iota("OP_GET_SCOPE")
 
-var OP_RETURN = iota()
-var OP_DO_BLOCK = iota()
-var OP_CALL = imm(1)
-# var OP_GETARG = iota()
-var OP_SHUFFLE = iota(2)
-var OP_SET_SCOPE = iota()
-var OP_GET_SCOPE = iota()
-
-var OP_RANGE = iota()
-
+var OP_RANGE = iota("OP_RANGE")
 
 var decode_table = {}
 
@@ -376,7 +369,6 @@ func print_code():
             if o in imm_counts:
                 num_immediates += imm_counts[o]
     do_print("]")
-        
         
 func prep():
     for p in get_property_list():
@@ -644,329 +636,10 @@ func exec():
     stop = false
     var oldip = IP
     while IP < len(CODE) and not stop:
-#        if CODE[IP] in decode_table:
-#            do_printraw(decode_table[CODE[IP]])
-#        else:
-#            do_printraw("IP@: " + str(CODE[IP]))
-#        if CODE[IP] in lit_counts:
-#            do_printraw(": ")
-#            for i in lit_counts[CODE[IP]]:
-#                do_printraw(constant_pool[CODE[IP+i+1]])
-#                if i+1 < lit_counts[CODE[IP]]:
-#                    do_printraw(", ")
-#        if CODE[IP] in imm_counts:
-#            do_printraw(": ")
-#            for i in imm_counts[CODE[IP]]:
-#                do_printraw(CODE[IP+i+1])
-#                if i+1 < imm_counts[CODE[IP]]:
-#                    do_printraw(", ")
-#
-#        do_printraw(" R: " + str(returnStack)+" ")
-#        #do_printraw(" S: " + str(stack)+" ")
-#        do_print("")
-                
         var inst = CODE[IP]
-
-        if inst == OP_LIT:
-            _push(constant_pool[CODE[IP+1]])
-            IP += 2
-        elif inst == OP_CALL:
-            _r_push(IP+2)
-            IP = CODE[IP+1]
-        elif inst == OP_U_PUSH:
-            _u_push(_pop())
-            IP += 1
-        elif inst == OP_U_POP:
-            _push(_u_pop())
-            IP += 1
-        elif inst == OP_U_FETCH:
-            _push(utilStack[len(utilStack)-1])
-            IP += 1
-        elif inst == OP_U_FETCH_1:
-            _push(utilStack[len(utilStack)-2])
-            IP += 1
-        elif inst == OP_U_FETCH_2:
-            _push(utilStack[len(utilStack)-3])
-            IP += 1
-        elif inst == OP_U_STORE:
-            utilStack[len(utilStack)-1] = _pop()
-            IP += 1
-        elif inst == OP_U_STORE_1:
-            utilStack[len(utilStack)-2] = _pop()
-            IP += 1
-        elif inst == OP_U_STORE_2:
-            utilStack[len(utilStack)-3] = _pop()
-            IP += 1
-        elif inst == OP_L_PUSH:
-            _l_push(_pop())
-            IP += 1
-        elif inst == OP_L_POP:
-            _push(_l_pop())
-            IP += 1
-        elif inst == OP_L_FETCH:
-            _push(loopStack.back())
-            IP += 1
-        elif inst == OP_L_FETCH_1:
-            _push(loopStack[len(loopStack)-2])
-            IP += 1
-        elif inst == OP_L_FETCH_2:
-            _push(loopStack[len(loopStack)-3])
-            IP += 1
-        elif inst == OP_L_FETCH_3:
-            _push(loopStack[len(loopStack)-4])
-            IP += 1
-        elif inst == OP_L_STORE:
-            loopStack[len(loopStack)-1] = _pop()
-            IP += 1
-        elif inst == OP_L_STORE_1:
-            loopStack[len(loopStack)-2] = _pop()
-            IP += 1
-        elif inst == OP_L_STORE_2:
-            loopStack[len(loopStack)-3] = _pop()
-            IP += 1
-        elif inst == OP_L_STORE_3:
-            loopStack[len(loopStack)-4] = _pop()
-            IP += 1
-        elif inst == OP_L_HERE_NEXT:
-            _l_push(IP+1)
-            IP += 1
-        elif inst == OP_WAIT:
-            # print("WAIT IP AT", IP)
-            if in_evt:
-                do_print("ERROR: suspended in evt_call!")
-                halt_fail()
-                return
-            var obj = _pop()
-            var sig = constant_pool[CODE[IP+1]]
-            if not obj.is_connected(sig, self, "sig_resume"):
-                if trace > 0: do_print("connecting")
-                obj.connect(sig, self, "sig_resume", [], CONNECT_ONESHOT | CONNECT_DEFERRED)
-            else:
-                do_print(str("Already connected to ", obj))
-            stop = true
-            IP += 2
-            # print("WAIT IP AT", IP)
-        elif inst == OP_THROW:
-            var maybe_err = _pop()
-            if not (typeof(maybe_err) == typeof(OK) and maybe_err == OK):
-                halt_fail()
-                return
-            else:
-                IP += 1
-        elif inst == OP_RECOVER:
-            do_print("Recover is a no-op outside resuming a faulted VM")
-            IP += 1
-        elif inst == OP_RESET:
-            stack = []; 
-            utilStack = []; 
-            returnStack = []; 
-            loopStack = [];
-            locals = {}
-            IP += 1
-        elif inst == OP_SHUFFLE:
-            var shuf_locals = {}
-            var input = constant_pool[CODE[IP+1]]
-            var output = constant_pool[CODE[IP+2]]
-
-            for i in len(input):
-                var idx = len(input) - i - 1
-                var c = input[idx]
-                shuf_locals[c] = _pop()
-            for c in output:
-                 _push(shuf_locals[c])
-            IP += 3
-        elif inst == OP_BLOCK_LIT:
-            _push(constant_pool[CODE[IP+2]])
-            IP = constant_pool[CODE[IP+1]]
-        elif inst == OP_RETURN:
-            IP = _r_pop()
-        elif inst == OP_DO_BLOCK:
-            _r_push(IP+1)
-            var lbl = _pop()
-            IP = lbl
-        elif inst == OP_WHILE:
-            var cont = _pop()
-            if cont:
-                _r_push(IP)
-                IP = loopStack.back()
-            else:
-                _l_pop()
-                IP += 1
-        elif inst == OP_GET_MEMBER:
-            _push(_pop().get(constant_pool[CODE[IP+1]]))
-            IP += 2
-        elif inst == OP_DEF:
-            var block = _pop()
-            var name = _pop()
-            dict[name] = block
-            IP += 1
-        elif inst == OP_SET_MEMBER:
-            var to = _pop()
-            var on = _pop()
-            on.set(constant_pool[CODE[IP+1]], to)
-            IP += 2
-        elif inst == OP_PUT:
-            var at = _pop()
-            var on = _pop()
-            var to = _pop()
-            on[at] = to
-            IP += 1
-        elif inst == OP_SELF:
-            _push(instance)
-            IP += 1
-        elif inst == OP_VM:
-            _push(self)
-            IP += 1
-        elif inst == OP_CALL_METHOD_LIT:
-            var mname = constant_pool[CODE[IP+1]]
-            _dispatch(_pop(), mname, [], false)
-            IP += 2
-        elif inst == OP_CALL_METHOD:
-            call_method(false)
-            IP += 1
-        elif inst == OP_CALL_METHOD_NULL:
-            call_method(true)
-            IP += 1
-        elif inst == OP_STACK_CLEAR:
-            stack.clear()
-            IP += 1
-        elif inst == OP_STACK_SIZE:
-            _push(len(stack))
-            IP += 1
-        elif inst == OP_NARRAY:
-            var n = _pop(); 
-            if n == 0:
-                _push([])
-            else:
-                var top = []
-                for i in n: top.append(_pop())
-                top.invert(); _push(top)
-            IP += 1
-        elif inst == OP_NEW_DICT:
-            _push({})
-            IP += 1
-        elif inst == OP_PRINT:
-            do_print(_pop())
-            IP += 1
-        elif inst == OP_SUSPEND:
-            stop = true
-            IP += 1
-            emit_signal("suspended")
-            break
-        elif inst == OP_EVAL:
-            _r_push(IP+1)
-            _eval_(_pop())
-        elif inst == OP_END_EVAL:
-            stop = true
-            IP = _r_pop()
-            emit_signal("eval_complete")
-            break
-        elif inst == OP_NTH:
-            var at = _pop(); var arr = _pop();
-            _push(arr[at])
-            IP += 1
-        elif inst == OP_IF_ELSE:
-            var false_lbl = _pop() 
-            var true_lbl = _pop()
-            var cond = _pop()
-            if cond:
-                _r_push(IP+1); IP = true_lbl
-            else:
-                _r_push(IP+1); IP = false_lbl
-        elif inst == OP_GOTO:
-            IP = constant_pool[CODE[IP+1]]
-        elif inst == OP_GOTO_WHEN_TRUE:
-            var JUMP = _pop()
-            if _pop(): 
-                IP = JUMP
-            else:
-                IP += 1
-        elif inst == OP_DUP:
-            stack.push_back(stack.back())
-            IP += 1
-        elif inst == OP_DROP:
-            stack.pop_back()
-            IP += 1
-        elif inst == OP_SWAP:
-            var a = stack[len(stack)-1]
-            stack[len(stack)-1] = stack[len(stack)-2]
-            stack[len(stack)-2] = a
-            IP += 1
-        elif inst == OP_PUSH_SCOPE:
-            var old_locals = locals
-            locals = { prevSymb: old_locals }
-            IP += 1
-        elif inst == OP_DROP_SCOPE:
-            var old_locals = locals[prevSymb]
-            locals = old_locals
-            IP += 1
-        elif inst == OP_GET_SCOPE:
-            _push(locals)
-            IP += 1
-        elif inst == OP_SET_SCOPE:
-            locals = _pop()
-            IP += 1
-        elif inst == OP_SETLOCAL:
-            var local_key = constant_pool[CODE[IP+1]]
-            locals[local_key] = _pop()
-            IP += 2
-        elif inst == OP_GETLOCAL:
-            var local_key = constant_pool[CODE[IP+1]]
-            _push(locals[local_key])
-            IP += 2
-        elif inst == OP_ADD:
-            var b = _pop(); var a = _pop();
-            _push(a + b)
-            IP += 1
-        elif inst == OP_SUB:
-            var b = _pop(); var a = _pop();
-            _push(a - b)
-            IP += 1
-        elif inst == OP_MUL:
-            var b = _pop(); var a = _pop();
-            _push(a * b)
-            IP += 1
-        elif inst == OP_DIV:
-            var b = _pop(); var a = _pop();
-            _push(a / b)
-            IP += 1
-        elif inst == OP_GT:
-            var b = _pop(); var a = _pop();
-            _push(a > b)
-            IP += 1
-        elif inst == OP_LT:
-            var b = _pop(); var a = _pop();
-            _push(a < b)
-            IP += 1
-        elif inst == OP_GE:
-            var b = _pop(); var a = _pop();
-            _push(a >= b)
-            IP += 1
-        elif inst == OP_LE:
-            var b = _pop(); var a = _pop();
-            _push(a <= b)
-            IP += 1
-        elif inst == OP_EQ:
-            var b = _pop(); var a = _pop();
-            _push(typeof(a) == typeof(b) and a == b)
-            IP += 1
-        elif inst == OP_AND:
-            var b = _pop(); var a = _pop();
-            _push(a and b)
-            IP += 1
-        elif inst == OP_OR:
-            var b = _pop(); var a = _pop();
-            _push(a or b)
-            IP += 1
-        elif inst == OP_PRINT:
-            do_print(_pop())
-            IP += 1
-        elif inst == OP_LEN:
-            _push(len(_pop()))
-            IP += 1
-        elif inst == OP_RANGE:
-            _push(range(_pop()))
-            IP += 1
+        if inst is FuncRef:
+            if inst.call_func():
+                break
         else:
             stop = true
             #print_code()
@@ -976,4 +649,304 @@ func exec():
     emit_signal("script_end")
 
             
-        
+func OP_LIT():
+    _push(constant_pool[CODE[IP+1]])
+    IP += 2
+func OP_CALL():
+    _r_push(IP+2)
+    IP = CODE[IP+1]
+func OP_U_PUSH():
+    _u_push(_pop())
+    IP += 1
+func OP_U_POP():
+    _push(_u_pop())
+    IP += 1
+func OP_U_FETCH():
+    _push(utilStack[len(utilStack)-1])
+    IP += 1
+func OP_U_FETCH_1():
+    _push(utilStack[len(utilStack)-2])
+    IP += 1
+func OP_U_FETCH_2():
+    _push(utilStack[len(utilStack)-3])
+    IP += 1
+func OP_U_STORE():
+    utilStack[len(utilStack)-1] = _pop()
+    IP += 1
+func OP_U_STORE_1():
+    utilStack[len(utilStack)-2] = _pop()
+    IP += 1
+func OP_U_STORE_2():
+    utilStack[len(utilStack)-3] = _pop()
+    IP += 1
+func OP_L_PUSH():
+    _l_push(_pop())
+    IP += 1
+func OP_L_POP():
+    _push(_l_pop())
+    IP += 1
+func OP_L_FETCH():
+    _push(loopStack.back())
+    IP += 1
+func OP_L_FETCH_1():
+    _push(loopStack[len(loopStack)-2])
+    IP += 1
+func OP_L_FETCH_2():
+    _push(loopStack[len(loopStack)-3])
+    IP += 1
+func OP_L_FETCH_3():
+    _push(loopStack[len(loopStack)-4])
+    IP += 1
+func OP_L_STORE():
+    loopStack[len(loopStack)-1] = _pop()
+    IP += 1
+func OP_L_STORE_1():
+    loopStack[len(loopStack)-2] = _pop()
+    IP += 1
+func OP_L_STORE_2():
+    loopStack[len(loopStack)-3] = _pop()
+    IP += 1
+func OP_L_STORE_3():
+    loopStack[len(loopStack)-4] = _pop()
+    IP += 1
+func OP_L_HERE_NEXT():
+    _l_push(IP+1)
+    IP += 1
+func OP_WAIT():
+    # print("WAIT IP AT", IP)
+    if in_evt:
+        do_print("ERROR: suspended in evt_call!")
+        halt_fail()
+        return
+    var obj = _pop()
+    var sig = constant_pool[CODE[IP+1]]
+    if not obj.is_connected(sig, self, "sig_resume"):
+        if trace > 0: do_print("connecting")
+        obj.connect(sig, self, "sig_resume", [], CONNECT_ONESHOT | CONNECT_DEFERRED)
+    else:
+        do_print(str("Already connected to ", obj))
+    stop = true
+    IP += 2
+    # print("WAIT IP AT", IP)
+func OP_THROW():
+    var maybe_err = _pop()
+    if not (typeof(maybe_err) == typeof(OK) and maybe_err == OK):
+        halt_fail()
+        return
+    else:
+        IP += 1
+func OP_RECOVER():
+    do_print("Recover is a no-op outside resuming a faulted VM")
+    IP += 1
+func OP_RESET():
+    stack = []; 
+    utilStack = []; 
+    returnStack = []; 
+    loopStack = [];
+    locals = {}
+    IP += 1
+func OP_SHUFFLE():
+    var shuf_locals = {}
+    var input = constant_pool[CODE[IP+1]]
+    var output = constant_pool[CODE[IP+2]]
+
+    for i in len(input):
+        var idx = len(input) - i - 1
+        var c = input[idx]
+        shuf_locals[c] = _pop()
+    for c in output:
+         _push(shuf_locals[c])
+    IP += 3
+func OP_BLOCK_LIT():
+    _push(constant_pool[CODE[IP+2]])
+    IP = constant_pool[CODE[IP+1]]
+func OP_RETURN():
+    IP = _r_pop()
+func OP_DO_BLOCK():
+    _r_push(IP+1)
+    var lbl = _pop()
+    IP = lbl
+func OP_WHILE():
+    var cont = _pop()
+    if cont:
+        _r_push(IP)
+        IP = loopStack.back()
+    else:
+        _l_pop()
+        IP += 1
+func OP_GET_MEMBER():
+    _push(_pop().get(constant_pool[CODE[IP+1]]))
+    IP += 2
+func OP_DEF():
+    var block = _pop()
+    var name = _pop()
+    dict[name] = block
+    IP += 1
+func OP_SET_MEMBER():
+    var to = _pop()
+    var on = _pop()
+    on.set(constant_pool[CODE[IP+1]], to)
+    IP += 2
+func OP_PUT():
+    var at = _pop()
+    var on = _pop()
+    var to = _pop()
+    on[at] = to
+    IP += 1
+func OP_SELF():
+    _push(instance)
+    IP += 1
+func OP_VM():
+    _push(self)
+    IP += 1
+func OP_CALL_METHOD_LIT():
+    var mname = constant_pool[CODE[IP+1]]
+    _dispatch(_pop(), mname, [], false)
+    IP += 2
+func OP_CALL_METHOD():
+    call_method(false)
+    IP += 1
+func OP_CALL_METHOD_NULL():
+    call_method(true)
+    IP += 1
+func OP_STACK_CLEAR():
+    stack.clear()
+    IP += 1
+func OP_STACK_SIZE():
+    _push(len(stack))
+    IP += 1
+func OP_NARRAY():
+    var n = _pop(); 
+    if n == 0:
+        _push([])
+    else:
+        var top = []
+        for i in n: top.append(_pop())
+        top.invert(); _push(top)
+    IP += 1
+func OP_NEW_DICT():
+    _push({})
+    IP += 1
+
+func OP_SUSPEND():
+    stop = true
+    IP += 1
+    emit_signal("suspended")
+    return true
+
+func OP_EVAL():
+    _r_push(IP+1)
+    _eval_(_pop())
+
+func OP_END_EVAL():
+    stop = true
+    IP = _r_pop()
+    emit_signal("eval_complete")
+    return true
+
+func OP_NTH():
+    var at = _pop(); var arr = _pop();
+    _push(arr[at])
+    IP += 1
+func OP_IF_ELSE():
+    var false_lbl = _pop() 
+    var true_lbl = _pop()
+    var cond = _pop()
+    if cond:
+        _r_push(IP+1); IP = true_lbl
+    else:
+        _r_push(IP+1); IP = false_lbl
+func OP_GOTO():
+    IP = constant_pool[CODE[IP+1]]
+func OP_GOTO_WHEN_TRUE():
+    var JUMP = _pop()
+    if _pop(): 
+        IP = JUMP
+    else:
+        IP += 1
+func OP_DUP():
+    stack.push_back(stack.back())
+    IP += 1
+func OP_DROP():
+    stack.pop_back()
+    IP += 1
+func OP_SWAP():
+    var a = stack[len(stack)-1]
+    stack[len(stack)-1] = stack[len(stack)-2]
+    stack[len(stack)-2] = a
+    IP += 1
+func OP_PUSH_SCOPE():
+    var old_locals = locals
+    locals = { prevSymb: old_locals }
+    IP += 1
+func OP_DROP_SCOPE():
+    var old_locals = locals[prevSymb]
+    locals = old_locals
+    IP += 1
+func OP_GET_SCOPE():
+    _push(locals)
+    IP += 1
+func OP_SET_SCOPE():
+    locals = _pop()
+    IP += 1
+func OP_SETLOCAL():
+    var local_key = constant_pool[CODE[IP+1]]
+    locals[local_key] = _pop()
+    IP += 2
+func OP_GETLOCAL():
+    var local_key = constant_pool[CODE[IP+1]]
+    _push(locals[local_key])
+    IP += 2
+func OP_ADD():
+    var b = _pop(); var a = _pop();
+    _push(a + b)
+    IP += 1
+func OP_SUB():
+    var b = _pop(); var a = _pop();
+    _push(a - b)
+    IP += 1
+func OP_MUL():
+    var b = _pop(); var a = _pop();
+    _push(a * b)
+    IP += 1
+func OP_DIV():
+    var b = _pop(); var a = _pop();
+    _push(a / b)
+    IP += 1
+func OP_GT():
+    var b = _pop(); var a = _pop();
+    _push(a > b)
+    IP += 1
+func OP_LT():
+    var b = _pop(); var a = _pop();
+    _push(a < b)
+    IP += 1
+func OP_GE():
+    var b = _pop(); var a = _pop();
+    _push(a >= b)
+    IP += 1
+func OP_LE():
+    var b = _pop(); var a = _pop();
+    _push(a <= b)
+    IP += 1
+func OP_EQ():
+    var b = _pop(); var a = _pop();
+    _push(typeof(a) == typeof(b) and a == b)
+    IP += 1
+func OP_AND():
+    var b = _pop(); var a = _pop();
+    _push(a and b)
+    IP += 1
+func OP_OR():
+    var b = _pop(); var a = _pop();
+    _push(a or b)
+    IP += 1
+func OP_PRINT():
+    do_print(_pop())
+    IP += 1
+func OP_LEN():
+    _push(len(_pop()))
+    IP += 1
+func OP_RANGE():
+    _push(range(_pop()))
+    IP += 1

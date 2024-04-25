@@ -155,7 +155,7 @@ func test_loop(vm):
 
 
 
-func __test_bench_loop(vm):
+func bench_loop(vm):
     vm.eval(": test-while 0 [ 1+ dup 10000 lt? ] while ;")
     vm.eval(": test-each 0 10000 range [ 1+ ] each ;")
     for i in 1:
