@@ -17,7 +17,7 @@ var listener_scripts = """
     : ls ( -- ) self &get_children() [ print ] each ;
     :: cd ( to -- ) =path 
         self &get_node( *path )? =to
-        *to null? not 
+        *to null? not
             [ VM &bind_instance( *to ) ] 
             [ { :Error :tried :to :switch :invalid :path *path }: print ] 
         if-else
@@ -147,7 +147,6 @@ func on_error(err):
 func on_eval_complete():
     show_state("")
     printed.clear()
-
 
 func on_suspend():
     show_state("Suspended...\n")

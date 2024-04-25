@@ -153,13 +153,68 @@ func test_loop(vm):
     vm.eval("0 10 [ 1+ ] times")
     stack_assert(vm, [10], "times works", true)
 
-func bench_loop(vm):
-    vm.eval(": test-while 0 [ 1+ dup 1000 lt? ] while ;")
-    vm.eval(": test-each 0 1000 range [ 1+ ] each ;")
+
+
+func __test_bench_loop(vm):
+    vm.eval(": test-while 0 [ 1+ dup 10000 lt? ] while ;")
+    vm.eval(": test-each 0 10000 range [ 1+ ] each ;")
     for i in 1:
+
         var start = Time.get_ticks_usec()
-        vm.do("test-while")
+        var val = 0
+        while val < 10000:
+            val += 1
         var end = Time.get_ticks_usec()
+        print("\nStraight line GDScript ", (end - start) / 1000.0, " msec")
+        
+        start = Time.get_ticks_usec()
+        vm.__prep()
+        vm.call("__push", 0)
+        var cont = true
+        while cont:
+            vm.call("__inc")
+            vm.call("__dup")
+            vm.call("__push", 10000)
+            vm.call("__lt")
+            cont =  vm.call("___pop")
+        end = Time.get_ticks_usec()
+        print("GDScript .call Stack ops while took ", (end - start) / 1000.0, " msec")
+
+        start = Time.get_ticks_usec()
+        vm.__prep()
+        var push = funcref(vm, "__push")
+        var inc = funcref(vm, "__inc")
+        var dup = funcref(vm, "__dup")
+        var lt = funcref(vm, "__lt")
+        var pop = funcref(vm, "___pop")
+        push.call_func(0)
+        cont = true
+        while cont:
+            inc.call_func()
+            dup.call_func()
+            push.call_func(10000)
+            lt.call_func()
+            cont =  pop.call_func()
+        end = Time.get_ticks_usec()
+        print("GDScript funcref Stack ops while took ", (end - start) / 1000.0, " msec")
+
+        start = Time.get_ticks_usec()
+        vm.__prep()
+        vm.__push(0)
+        cont = true
+        while cont:
+            vm.__inc()
+            vm.__dup()
+            vm.__push(10000)
+            vm.__lt()
+            cont =  vm.___pop()
+        end = Time.get_ticks_usec()
+        print("GDScript Stack ops while took ", (end - start) / 1000.0, " msec")
+
+
+        start = Time.get_ticks_usec()
+        vm.do("test-while")
+        end = Time.get_ticks_usec()
         print("While Loop took ", (end - start) / 1000.0, " msec")
         # stack_assert(vm, [1000], "While looping", true)
 
@@ -171,14 +226,14 @@ func bench_loop(vm):
         var gdf = GDForth.new()
         gdf.load_script("""
             :bench [ 0 swap range [ drop 1 + ] each drop ] def-evt
-            :bench-while [ 0 [ 1 + dup 1000 lt? ] while drop ] def-evt
+            :bench-while [ 0 [ 1 + dup 10000 lt? ] while drop ] def-evt
         """)
         start = Time.get_ticks_usec()
-        gdf.evt_call("bench-while", 1000)
+        gdf.evt_call("bench-while", 10000)
         end = Time.get_ticks_usec()
         print("Alpha while took ", (end-start)/1000.0, " msec")
         start = Time.get_ticks_usec()
-        gdf.evt_call("bench", 1000)
+        gdf.evt_call("bench", 10000)
         end = Time.get_ticks_usec()
         print("Alpha Each took ", (end-start)/1000.0, " msec")
         print()

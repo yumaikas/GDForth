@@ -30,6 +30,34 @@ var CODE = PoolIntArray()
 var errSymb = {}; var lblSymb = {}; var iterSymb = {}; var prevSymb = {}
 var in_evt = false
 var instance
+var Binds = GDScript.new()
+
+
+func __prep():
+    stack.resize(8)
+
+var s_idx = -1
+
+func __lt():
+    var b = stack[s_idx]; s_idx -= 1
+    var a = stack[s_idx]; 
+    stack[s_idx] = a < b
+
+func __inc():
+    stack[s_idx] += 1
+
+func __dup():
+    s_idx += 1
+    stack[s_idx] = stack[s_idx-1]
+
+func __push(val):
+    s_idx += 1
+    stack[s_idx] = val
+
+func ___pop():
+    var ret = stack[s_idx]
+    s_idx -= 1
+    return ret
 
 func _init():
     prep()
@@ -83,9 +111,7 @@ func call_method(push_nulls=false):
 
 const argNames = ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"]
 
-
 # TODO: Event select via bound params used for "select context"
-# TODO: Blog about the return to GDForth Alpha
 
 func _dispatch(on, name, margs, push_nulls = false):
     if typeof(on) == TYPE_OBJECT:
@@ -142,19 +168,13 @@ const _stdlib = """
 :: load ( path -- .. ) =path File &new() =f 
     *f &open( *path READ ) dup OK eq? [ drop *f &get_as_text() eval OK ] if ;
 
-: while ( block: ( -- t/f ) -- ..  ) l< l<here+ l@1 do-block l@ goto-if-true l> l> 2drop ;
-: each ( arr block -- .. ) 
-    l< l< ( l: block arr )
-    l@ len pos? [
-        0 l< ( l: block arr idx )
-        l<here+ ( l: 3:block 2:arr 1:idx 0:lbl )
-        l@2 l@1 nth l@3 do-block ( fetch element via arr & idx, exec block )
-        l@1 1+ l!1  ( increment idx )
-        l@2 len l@1 gt? l@ goto-if-true ( check if we need to continue )
-        l> l> 2drop
-    ] if
-    l> l> 2drop
-;
+: each ( arr block -- .. ) 0 u< u< u<
+    u@ len pos? [ 
+        u@ u@2 nth u@1 do-block ( execute )
+        u@2 1+ u!2 ( increment )
+        u@ len u@2 gt? ( condition )
+    ]  IF/WHILE u> u> u> 3drop ;
+
 : times ( num block -- ..  ) 
     ( setup )    l< l< l<here+ ( block num here )
     ( iterate )  l@1 pos? [ l@2 do-block l@1 1- l!1 ] if l@1 pos? l@ goto-if-true 
@@ -264,6 +284,11 @@ var OP_DEF = iota()
 var OP_U_PUSH = iota() 
 var OP_U_POP = iota()
 var OP_U_FETCH = iota()
+var OP_U_FETCH_1 = iota()
+var OP_U_FETCH_2 = iota()
+var OP_U_STORE = iota()
+var OP_U_STORE_1 = iota()
+var OP_U_STORE_2 = iota()
 var OP_L_PUSH = iota() 
 var OP_L_POP = iota()
 var OP_L_FETCH = iota()
@@ -295,6 +320,7 @@ var OP_PRINT = iota()
 var OP_PRINT_STACK = iota()
 
 var OP_IF_ELSE = iota()
+var OP_WHILE = iota()
 var OP_GOTO_WHEN_TRUE = iota()
 
 var OP_DUP = iota()
@@ -397,6 +423,8 @@ var _comp_map = {
     "File": [OP_LIT, assoc_constant(File)],
     "eval": OP_EVAL,
     "if-else": OP_IF_ELSE,
+    "while": [OP_L_PUSH, OP_LIT, assoc_constant(true), OP_WHILE],
+    "IF/WHILE": [OP_L_PUSH, OP_WHILE],
     "do-block": OP_DO_BLOCK,
     "throw": OP_THROW,
     "recover-vm": OP_RECOVER,
@@ -404,7 +432,8 @@ var _comp_map = {
     "_s": OP_PRINT_STACK,
     "class-db": [OP_LIT,assoc_constant(ClassDB)],
     "goto-if-true": OP_GOTO_WHEN_TRUE,
-    "u<": OP_U_PUSH, "u>": OP_U_POP, "u@": OP_U_FETCH,
+    "u<": OP_U_PUSH, "u>": OP_U_POP, "u@": OP_U_FETCH, "u@1": OP_U_FETCH_1, "u@2": OP_U_FETCH_2, 
+    "u!0": OP_U_STORE, "u!1": OP_U_STORE_1, "u!2": OP_U_STORE_2,
     "l<": OP_L_PUSH, "l>": OP_L_POP, "l@": OP_L_FETCH,
     "l@0": OP_L_FETCH, "l@1": OP_L_FETCH_1, "l@2": OP_L_FETCH_2, "l@3": OP_L_FETCH_3,
     "l!0": OP_L_STORE, "l!1": OP_L_STORE_1, "l!2": OP_L_STORE_2, "l!3": OP_L_STORE_3,
@@ -632,8 +661,9 @@ func exec():
 #                if i+1 < imm_counts[CODE[IP]]:
 #                    do_printraw(", ")
 #
-        # do_printraw(" S: " + str(stack)+" ")
-        # do_print("")
+#        do_printraw(" R: " + str(returnStack)+" ")
+#        #do_printraw(" S: " + str(stack)+" ")
+#        do_print("")
                 
         var inst = CODE[IP]
 
@@ -650,7 +680,22 @@ func exec():
             _push(_u_pop())
             IP += 1
         elif inst == OP_U_FETCH:
-            _push(utilStack.back())
+            _push(utilStack[len(utilStack)-1])
+            IP += 1
+        elif inst == OP_U_FETCH_1:
+            _push(utilStack[len(utilStack)-2])
+            IP += 1
+        elif inst == OP_U_FETCH_2:
+            _push(utilStack[len(utilStack)-3])
+            IP += 1
+        elif inst == OP_U_STORE:
+            utilStack[len(utilStack)-1] = _pop()
+            IP += 1
+        elif inst == OP_U_STORE_1:
+            utilStack[len(utilStack)-2] = _pop()
+            IP += 1
+        elif inst == OP_U_STORE_2:
+            utilStack[len(utilStack)-3] = _pop()
             IP += 1
         elif inst == OP_L_PUSH:
             _l_push(_pop())
@@ -739,6 +784,14 @@ func exec():
             _r_push(IP+1)
             var lbl = _pop()
             IP = lbl
+        elif inst == OP_WHILE:
+            var cont = _pop()
+            if cont:
+                _r_push(IP)
+                IP = loopStack.back()
+            else:
+                _l_pop()
+                IP += 1
         elif inst == OP_GET_MEMBER:
             _push(_pop().get(constant_pool[CODE[IP+1]]))
             IP += 2
