@@ -1,5 +1,7 @@
 class_name GDForthVM extends Reference
 
+const LEX = preload("./lex.gd")
+
 signal script_end
 signal eval_complete
 signal suspended
@@ -218,19 +220,8 @@ func _eval_(script):
     comp(script)
     exec()
 
-
 func tokenize(script):
-    var drop = false
-    var inputs = script.replace("\n", " ").replace("\r", " ").replace("\t", " ")
-    var toks = inputs.split(" ", false)
-
-    var ret_toks = []
-
-    for tok in toks:
-        if tok == "": continue
-        ret_toks.append(tok)
-
-    return ret_toks
+    return lex.tokenize(script)
     
 
 var lit_counts = {}
@@ -370,7 +361,9 @@ func print_code():
                 num_immediates += imm_counts[o]
     do_print("]")
         
+var lex
 func prep():
+    lex = LEX.new()
     for p in get_property_list():
         if p.name.begins_with("OP_"):
             decode_table[get(p.name)] = p.name
@@ -482,14 +475,9 @@ func compile(tokens):
                 var err = str("Could not compile ", tok, " as a call")
                 do_push_error(err)
                 return { "err": err }
-#        elif tok.begins_with("$"):
-#            if tok.substr(1) in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]:
-#                CODE.append_array([ OP_GETARG, int(tok.substr(1)) ])
-#                t_idx+=1
-#            else:
-#                var err = str("Could not compile ", tok, " as a valid argument get")
-#                do_push_error(err)
-#                return { "err": err }
+        elif tok.begins_with('"'):
+            CODE.append_array([OP_LIT, assoc_constant(tok.substr(1, len(tok)-2))])
+            t_idx += 1
         elif tok.begins_with(":") and tok != ":" and tok != "::":
             CODE.append_array([OP_LIT, assoc_constant(tok.substr(1))])
             t_idx+=1
@@ -518,21 +506,26 @@ func compile(tokens):
             t_idx += 3
             
         elif tok in [":", "::", "evt:", "evtl:"]:
-            var name = tokens[t_idx + 1];
-            var SEEK = t_idx + 2;
+            var name = tokens[t_idx + 1]
+            # print("NAME: ", name)
+            var SEEK = t_idx + 2
 
             while tokens[SEEK] != ";":
+                # print("\t", tokens[SEEK])
                 if tokens[SEEK] in [":", "::", "evt:", "evtl:"]:
                     var err = str("Cannot nest `", tok, "`, while defining '", name, "'")
                     do_push_error(err)
                     return { "err": err }
                 SEEK += 1
-            # Create a 
+                if SEEK >= len(tokens):
+                    var err = str("Missing closing semicolon ", tokens[t_idx + 1])
+                    do_push_error(err)
+                    return { "err": err }
+
             CODE.append_array([OP_GOTO, 0])
             dict[name] = len(CODE)
             if tok in ["evt:", "evtl:"]:
                 evts[name] = len(CODE)
-
             if tok in ["::", "evtl:"]:
                 CODE.append(OP_PUSH_SCOPE)
 
@@ -548,7 +541,6 @@ func compile(tokens):
             CODE[dict[name]-1] = assoc_constant(len(CODE))
 
             t_idx = SEEK + 1
-
             
         elif tok == "[":
             var SEEK = t_idx + 1

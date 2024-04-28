@@ -30,7 +30,7 @@ func _init():
     quit()
     # call_deferred('quit')
 
-func stack_assert(vm, matches, msg, clear= false):
+func stack_assert(vm, matches, msg, clear=false):
     if not array_eq(vm.stack, matches):
         print(
         msg, " Failed! ",
@@ -48,17 +48,6 @@ func pget(val, path):
         else:
             break
     return ret
-
-#func const_assert(comp, path, val, msg):
-#   var toCompare = pget(comp.constants, path)   
-#   if comp._eq(toCompare, val):
-#       comp.stack.clear()
-#       printraw(".")
-#   else:
-#       print(
-#           msg, " failed! ",
-#           "Expected to get ", val, " but got ", toCompare, " instead")
-
 
 func array_eq(arr1, arr2):
     if len(arr1) != len(arr2):
@@ -155,7 +144,7 @@ func test_loop(vm):
 
 
 
-func bench_loop(vm):
+func __ignore_test_bench_loop(vm):
     vm.eval(": test-while 0 [ 1+ dup 10000 lt? ] while ;")
     vm.eval(": test-each 0 10000 range [ 1+ ] each ;")
     for i in 1:
@@ -240,7 +229,18 @@ func bench_loop(vm):
     
 func test_strings(vm):
     vm.eval("{ :Foo SP :BAR TAB :baz }ES:")
-    stack_assert(vm, ["Foo BAR\tbaz"], true)
+    stack_assert(vm, ["Foo BAR\tbaz"], "}ES: works", true)
+
+    vm.eval('"This is a string"')
+    stack_assert(vm, ["This is a string"], "Basic quoted strings", true)
+
+    vm.eval('"This is \\"a string"')
+    stack_assert(vm, ["This is \"a string"], "Quote escapes work", true)
+
+    vm.eval('"This is \\t\\r\\n string"')
+    stack_assert(vm, ["This is \t\r\n string"], "tab, carriage retrun, and newline escapes work", true)
+    vm.eval('" "')
+    stack_assert(vm, [" "], "spaces work", true)
 
 func _ignore_test_classdb(vm):
     vm.eval("class-db &get_class_list() [ print ] each")

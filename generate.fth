@@ -30,16 +30,11 @@
 : void-return? ( xml -- t/f ) :type @attr :void eq? ;
 : default? ( xml -- t/f ) :default @attr null? not ;
 
-: if- ( cond block -- ) swap [ do-block true ] [ drop false ] if-else  ;
-: -elif- ( conda condb block -- taken? ) u< and [ u> do-block true ] [ u> drop false ] if-else ;
-: -elif ( conda condb block -- taken? ) u< and [ u> do-block ] [ u> drop ] if-else ;
-: -else ( taken? block -- ) swap [ do-block ] [ drop ] if-else ;
-
 : get-xml-parser ( -- ) :XMLParser ^ u< u@ &open( :./gd_docs/@GDScript.xml ) throw u> ;
 :: empty-node? ( xml -- empty ) u< u@ XML-ELEMENT? u> &is_empty() and ;
 
-: TABS ( n -- ) 2 * [ SP print-raw ] times ;
-: TABS: ( n -- ) 2 * [ drop SP ] times ;
+: TABS ( n -- ) 2 * [ " " print-raw ] times ;
+: TABS: ( n -- ) 2 * [ drop " " ] times ;
 : [1+] [ 1+ ] ; : [1-] [ 1- ] ;
 
 :: main ( -- ) get-xml-parser =xml 0 =depth
@@ -63,27 +58,26 @@
             ] if
         ] if 
     *cont ] while
-    *methods [ =m { :var SP :M_ *m :name get SP := SP :m_iota() }ES: ] each
+    *methods [ =m { "var M_" *m :name get " = m_iota()" }ES: ] each 
     2 [ print ] times 
 
     true =first?
-    { :, SP }ES: =,SP
     *methods [ =m 
         *m :args get =args 
         *m :name get =name
         *m :return get :val eq? =method-returns
         { 
-         1 TABS: *first? :if :elif ? SP :m_id SP :== SP :M_ *m :name get COLON NL
-        *args reversed [ =a 2 TABS: :var SP *a SP := SP :_pop() NL ] each
+         1 TABS: *first? "if" "elif" ? " m_id == m_" *m :name get ":\n"
+         *args reversed [ =a 2 TABS: "var " *a " = _pop()\n" ] each
          2 TABS:
-         *method-returns [ :var SP :ret SP := SP ] if
-         *name :( *,SP &join( *args ) :) NL 
-         *method-returns [ 2 TABS: :_push(ret) NL ] if
+             *method-returns [ "var ret = " ] if
+             *name "(" ", " &join( *args ) ")\n" 
+         *method-returns [ 2 TABS: "_push(ret)\n " ] if
         }ES: print
         false =first?
     ] each 
     
     ( *methods print )
-;
+   ;
 main bye 
 
