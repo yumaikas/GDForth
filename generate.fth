@@ -36,6 +36,7 @@
 : TABS ( n -- ) 2 * [ " " print-raw ] times ;
 : TABS: ( n -- ) 2 * [ drop " " ] times ;
 : [1+] [ 1+ ] ; : [1-] [ 1- ] ;
+: has? ( el arr -- t/f ) &find( nom ) -1 eq? not ;
 
 :: main ( -- ) get-xml-parser =xml 0 =depth
     { } =methods
@@ -58,8 +59,25 @@
             ] if
         ] if 
     *cont ] while
-    *methods [ =m { "var M_" *m :name get " = m_iota()" }ES: ] each 
-    2 [ print ] times 
+    "class_name GDForthStdLib extends Reference" print
+    "" print
+    "var vm" print
+    "func _init(vm):" print
+    "   self.vm = vm" print
+    "" print
+    "func _push(val):" print
+    "   vm._push(val)" print
+    "" print
+    "func _pop():" print
+    "   return vm._pop()" print
+    2 [ "" print ] times
+    { :yield :printraw :printt :prints :print_debug :print :preload :get_stack :assert } =remove
+    {
+        *methods [ dup =m :name get *remove has? not [ *m ] if ] each 
+    } =methods
+    ( TODO: Emit a loader method )
+
+    ( *methods [ =m ] each )
 
     true =first?
     *methods [ =m 
@@ -67,17 +85,16 @@
         *m :name get =name
         *m :return get :val eq? =method-returns
         { 
-         1 TABS: *first? "if" "elif" ? " m_id == m_" *m :name get ":\n"
+         "func gdf_" *m :name get "():\n"
          *args reversed [ =a 2 TABS: "var " *a " = _pop()\n" ] each
          2 TABS:
              *method-returns [ "var ret = " ] if
              *name "(" ", " &join( *args ) ")\n" 
          *method-returns [ 2 TABS: "_push(ret)\n " ] if
-        }ES: print
+        }: print
         false =first?
     ] each 
-    
-    ( *methods print )
    ;
-main bye 
+"stdlib.gd" [ main ] _s with-file
+bye 
 

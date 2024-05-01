@@ -34,7 +34,6 @@ var in_evt = false
 var instance
 var Binds = GDScript.new()
 
-
 func __prep():
     stack.resize(8)
 
@@ -91,8 +90,13 @@ func _pop_special(symb):
         halt_fail()
         return {errSymb: "SPECIAL POP MISMATCH"}
 
+var stdout = null
+
 func do_printraw(toPrint):
-    printraw(toPrint)
+    if not stdout:
+        printraw(toPrint)
+    else:
+        stdout.printraw(str(toPrint))
     emit_signal("do_print", toPrint)
 
 func do_print(toPrint):
@@ -141,7 +145,6 @@ func _dispatch(on, name, margs, push_nulls = false):
         if ret != null or push_nulls:
             _push(ret)
 
-
 const _stdlib = """
 : stop suspend ;
 : box 1 narray ;
@@ -160,8 +163,7 @@ const _stdlib = """
 : ) stack-size u> - narray u> u> call-method ;
 : )? stack-size u> - narray u> u> call-method-null ;
 : nom u> 1 - u< ( eat parameters into a method call ) ;
-: }: stack-size u> - narray SP &join( nom ) ;
-: }ES: stack-size u> - narray ES &join( nom ) ;
+: }: stack-size u> - narray "" &join( nom ) ;
 : not ( t/f -- f/t ) [ false ] [ true ] if-else ;
 : WRITE 2 ;
 : READ 1 ;
@@ -210,7 +212,8 @@ func do(word, a0=null, a1=null, a2=null, a3=null, a4=null, a5=null, a6=null, a7=
 func eval(script):
     _r_push(IP)
     IP = len(CODE)
-    comp(script)
+    if "err" in comp(script):
+        return
     CODE.append(OP_END_EVAL)
     exec()
 
@@ -639,7 +642,6 @@ func exec():
             do_print(str("Unknown opcode: ", inst, " at ", IP))
     stop = true
     emit_signal("script_end")
-
             
 func OP_LIT():
     _push(constant_pool[CODE[IP+1]])
@@ -936,9 +938,83 @@ func OP_OR():
 func OP_PRINT():
     do_print(_pop())
     IP += 1
+func OP_PRINT_STACK():
+    do_print(str(stack))
+    IP += 1
 func OP_LEN():
     _push(len(_pop()))
     IP += 1
 func OP_RANGE():
     _push(range(_pop()))
     IP += 1
+
+class GDF_StdoutOutput extends Reference:
+    var _prev
+    func _init(previous_output):
+        _prev = previous_output
+
+    func previous():
+        return _prev
+
+    func printraw(s):
+        printraw(s)
+
+class GDF_FileOutput extends Reference:
+    var file
+    var _prev
+    func _init(previous_output):
+        _prev = previous_output
+        
+    func open(path):
+        file = File.new()
+        print(path)
+        return file.open(path, File.WRITE)
+
+    func previous():
+        return _prev
+
+    func close():
+        file.close()
+
+    func printraw(s):
+        file.store_string(s)
+
+class GDF_ProxyOutput extends Reference:
+    var output
+    func _init(output):
+        self.output = output
+
+    func close():
+        if output.has_method("close"):
+            output.close()
+
+    func printraw(s):
+        output.printraw(s)
+
+class GDF_LibOutput extends Reference:
+    var VM
+    var stdout_bottom
+    func _init(vm):
+        VM = vm
+        stdout_bottom = GDF_StdoutOutput.new(null)
+
+    func load():
+        VM._comp_map["(push-file-stdout)"] = funcref(self, "push_file_stdout")
+        VM._comp_map["(pop-stdout)"] = funcref(self, "pop_stdout")
+        VM.stdout = stdout_bottom
+        VM.eval(": with-file ( path block -- ) swap (push-file-stdout) do-block VM .stdout &close() (pop-stdout) ;")
+        
+    func push_file_stdout():
+        var filePath = VM._pop()
+        var out = GDF_FileOutput.new(VM.stdout)
+        out.open(filePath) # TODO: Check error code here?
+        VM.stdout = out
+        VM.IP += 1
+
+    func pop_stdout():
+        if VM.stdout != stdout_bottom:
+            VM.stdout = VM.stdout.previous()
+        else:
+            VM.do_push_error("Tried to pop the bottom-most stdout proxy!")
+        VM.IP += 1
+

@@ -1,6 +1,7 @@
 class_name GDForthCLI extends SceneTree
 
 const VM = preload("VM.gd")
+const LibOutput = VM.GDF_LibOutput
 
 var forth = VM.new()
 
@@ -12,6 +13,8 @@ func _request_complete(result, code, headers, body):
 
 func _init():
     forth.bind_instance(self)
+    var lib = LibOutput.new(forth)
+    lib.load()
     # get_root().add_child(
 
     var http = HTTPRequest.new()
