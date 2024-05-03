@@ -132,7 +132,7 @@ func test_methods(vm):
     vm.eval("self &pair( 1 2 )")
     stack_assert(vm, [[1,2]], "Arg method calls work", true)
 
-const GDForth = preload("./GDForth.gd")
+const GDForth = preload("./GDForthAlpha.gd")
 
 func test_loop(vm): 
     vm.eval(" 0 [ 1+ dup 10 lt? ] while")
@@ -228,8 +228,8 @@ func __ignore_test_bench_loop(vm):
         print()
     
 func test_strings(vm):
-    vm.eval("{ :Foo SP :BAR TAB :baz }ES:")
-    stack_assert(vm, ["Foo BAR\tbaz"], "}ES: works", true)
+    vm.eval("{ :Foo SP :BAR TAB :baz }:")
+    stack_assert(vm, ["Foo BAR\tbaz"], "}: works", true)
 
     vm.eval('"This is a string"')
     stack_assert(vm, ["This is a string"], "Basic quoted strings", true)

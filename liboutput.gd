@@ -1,25 +1,23 @@
 class_name GDF_LibOutput extends Reference
 
-var VM
 var stdout_bottom
-func _init(vm):
-    VM = vm
+func _init():
     stdout_bottom = GDF_StdoutOutput.new(null)
 
-func load_lib():
+func load_lib(VM):
     VM._comp_map["(push-file-stdout)"] = funcref(self, "push_file_stdout")
     VM._comp_map["(pop-stdout)"] = funcref(self, "pop_stdout")
     VM.stdout = stdout_bottom
     VM.eval(": with-file ( path block -- ) swap (push-file-stdout) do-block VM .stdout &close() (pop-stdout) ;")
     
-func push_file_stdout():
+func push_file_stdout(VM):
     var filePath = VM._pop()
     var out = GDF_FileOutput.new(VM.stdout)
     out.open(filePath) # TODO: Check error code here?
     VM.stdout = out
     VM.IP += 1
 
-func pop_stdout():
+func pop_stdout(VM):
     if VM.stdout != stdout_bottom:
         VM.stdout = VM.stdout.previous()
     else:

@@ -61,23 +61,13 @@
     *cont ] while
     "class_name GDForthStdLib extends Reference" print
     "" print
-    "var VM" print
-    "func _init(vm):" print
-    "   self.VM = vm" print
-    "" print
-    "func _push(val):" print
-    "   VM._push(val)" print
-    "" print
-    "func _pop():" print
-    "   return VM._pop()" print
-    "" print
     { :yield :printraw :printt :prints :print_debug :print :preload :get_stack :assert } =remove
     {
         *methods [ dup =m :name get *remove has? not [ *m ] if ] each 
     } =methods
     ( TODO: Emit a loader method )
 
-    "func load():" print
+    "func load(VM):" print
      *methods [ =m *m :name get =m-name
         { "    VM._comp_map['" *m-name "'] = funcref(self, 'gdf_" *m-name "')" }: print
      ] each 
@@ -89,12 +79,12 @@
         *m :name get =name
         *m :return get :val eq? =method-returns
         { 
-         "func gdf_" *m :name get "():\n"
-         *args reversed [ =a 2 TABS: "var " *a " = _pop()\n" ] each
+         "func gdf_" *m :name get "(VM):\n"
+         *args reversed [ =a 2 TABS: "var " *a " = VM._pop()\n" ] each
          2 TABS:
              *method-returns [ "var ret = " ] if
              *name "(" ", " &join( *args ) ")\n" 
-         *method-returns [ 2 TABS: "_push(ret)\n" ] if
+         *method-returns [ 2 TABS: "VM._push(ret)\n" ] if
          2 TABS: "VM.IP += 1" 
         }: print
         "" print
