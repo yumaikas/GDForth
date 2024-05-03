@@ -193,7 +193,7 @@ func comp(script):
     return compile(toks)
 
 func do(word, a0=null, a1=null, a2=null, a3=null, a4=null, a5=null, a6=null, a7=null, a8=null, a9=null):
-    print("do, IP at: ", IP)
+    # print("do, IP at: ", IP)
     if not(word in dict):
         do_push_error(str("Tried to do nonexistent word: ", word))
         return
@@ -207,7 +207,7 @@ func do(word, a0=null, a1=null, a2=null, a3=null, a4=null, a5=null, a6=null, a7=
     _r_push(0)
     IP = dict[word]
     exec()
-    print("stop-do, IP at: ", IP)
+    # print("stop-do, IP at: ", IP)
 
 func eval(script):
     _r_push(IP)
@@ -637,7 +637,7 @@ func exec():
                 break
         else:
             stop = true
-            #print_code()
+            # print_code()
             print(returnStack, " ", IP)
             do_print(str("Unknown opcode: ", inst, " at ", IP))
     stop = true
@@ -948,73 +948,4 @@ func OP_RANGE():
     _push(range(_pop()))
     IP += 1
 
-class GDF_StdoutOutput extends Reference:
-    var _prev
-    func _init(previous_output):
-        _prev = previous_output
-
-    func previous():
-        return _prev
-
-    func printraw(s):
-        printraw(s)
-
-class GDF_FileOutput extends Reference:
-    var file
-    var _prev
-    func _init(previous_output):
-        _prev = previous_output
-        
-    func open(path):
-        file = File.new()
-        print(path)
-        return file.open(path, File.WRITE)
-
-    func previous():
-        return _prev
-
-    func close():
-        file.close()
-
-    func printraw(s):
-        file.store_string(s)
-
-class GDF_ProxyOutput extends Reference:
-    var output
-    func _init(output):
-        self.output = output
-
-    func close():
-        if output.has_method("close"):
-            output.close()
-
-    func printraw(s):
-        output.printraw(s)
-
-class GDF_LibOutput extends Reference:
-    var VM
-    var stdout_bottom
-    func _init(vm):
-        VM = vm
-        stdout_bottom = GDF_StdoutOutput.new(null)
-
-    func load():
-        VM._comp_map["(push-file-stdout)"] = funcref(self, "push_file_stdout")
-        VM._comp_map["(pop-stdout)"] = funcref(self, "pop_stdout")
-        VM.stdout = stdout_bottom
-        VM.eval(": with-file ( path block -- ) swap (push-file-stdout) do-block VM .stdout &close() (pop-stdout) ;")
-        
-    func push_file_stdout():
-        var filePath = VM._pop()
-        var out = GDF_FileOutput.new(VM.stdout)
-        out.open(filePath) # TODO: Check error code here?
-        VM.stdout = out
-        VM.IP += 1
-
-    func pop_stdout():
-        if VM.stdout != stdout_bottom:
-            VM.stdout = VM.stdout.previous()
-        else:
-            VM.do_push_error("Tried to pop the bottom-most stdout proxy!")
-        VM.IP += 1
 

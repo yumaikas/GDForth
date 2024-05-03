@@ -2,7 +2,8 @@ class_name GDForthUI extends SceneTree
 
 var outputLbl
 var edit
-var forth = preload("./VM.gd").new()
+var GDForth = preload("./GDForth.gd")
+var forth
 
 var history = []
 var printed = []
@@ -62,14 +63,14 @@ func _init():
     newSb.content_margin_left = 4
     outputLbl.add_stylebox_override("normal", newSb)
 
+    forth = GDForth.new(get_root())
 
-    forth.bind_instance(get_root())
     forth.eval(listener_scripts)
-    forth.connect("suspended", self, "on_suspend")
-    forth.connect("eval_complete", self, "on_eval_complete")
-    forth.connect("script_end", self, "on_script_end")
-    forth.connect("do_print", self, "on_print")
-    forth.connect("do_error", self, "on_error")
+    forth.VM.connect("suspended", self, "on_suspend")
+    forth.VM.connect("eval_complete", self, "on_eval_complete")
+    forth.VM.connect("script_end", self, "on_script_end")
+    forth.VM.connect("do_print", self, "on_print")
+    forth.VM.connect("do_error", self, "on_error")
 
     edit = LineEdit.new()
     edit.name = "%edit"
@@ -87,37 +88,37 @@ func on_script_end():
 func show_state(prefix):
     var output = PoolStringArray()
     output.append(prefix)
-    output.append(str("IP: ", forth.IP, "\n"))
+    output.append(str("IP: ", forth.VM.IP, "\n"))
     
-    output.append(str("self: ", forth.instance, "\n"))
-    if "path" in forth.instance:
-        output.append(str("path:", forth.instance.path, "\n"))
-    if forth.instance.has_method("get_children"):
-        output.append(str("\nchildren: ", forth.instance.get_children(), "\n"))
+    output.append(str("self: ", forth.VM.instance, "\n"))
+    if "path" in forth.VM.instance:
+        output.append(str("path:", forth.VM.instance.path, "\n"))
+    if forth.VM.instance.has_method("get_children"):
+        output.append(str("\nchildren: ", forth.VM.instance.get_children(), "\n"))
     output.append("stacks:\n")
     output.append("data: ")
-    for el in forth.stack:
+    for el in forth.VM.stack:
         output.append(str(el))
         output.append(", ")
     output.remove(len(output)-1)
     output.append("\n")
 
     output.append("return: ")
-    for el in forth.returnStack:
+    for el in forth.VM.returnStack:
         output.append(str(el))
         output.append(", ")
     output.remove(len(output)-1)
     output.append("\n")
 
     output.append("util: ")
-    for el in forth.utilStack:
+    for el in forth.VM.utilStack:
         output.append(str(el))
         output.append(", ")
     output.remove(len(output)-1)
     output.append("\n")
 
     output.append("loop: ")
-    for el in forth.loopStack:
+    for el in forth.VM.loopStack:
         output.append(str(el))
         output.append(", ")
     output.remove(len(output)-1)
