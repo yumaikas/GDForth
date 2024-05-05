@@ -142,7 +142,7 @@ const GDForth = preload("./GDForthAlpha.gd")
 func test_loop(vm): 
     vm.eval(" 0 [ 1+ dup 10 lt? ] while")
     stack_assert(vm, [10], "while works",  true)
-    vm.eval("0 10 range [ drop 1+ ] each")
+    vm.eval("0 10 range(*) [ drop 1+ ] each")
     stack_assert(vm, [10],  "each works", true)
     vm.eval("0 10 [ 1+ ] times")
     stack_assert(vm, [10], "times works", true)
@@ -243,7 +243,7 @@ func test_strings(vm):
     vm.eval('" "')
     stack_assert(vm, [" "], "spaces work", true)
 
-    vm.eval("{ :Foo SP :BAR TAB :baz }:")
+    vm.eval('{ :Foo " " :BAR "\t" :baz }:')
     stack_assert(vm, ["Foo BAR\tbaz"], "}: works", true)
 
 func _ignore_test_classdb(vm):

@@ -57,7 +57,12 @@ func ___pop():
     return ret
 
 func _init():
-    prep()
+    lex = LEX.new()
+    for p in get_property_list():
+        if p.name.begins_with("OP_"):
+            decode_table[get(p.name)] = p.name
+    CODE.append(OP_END_EVAL)
+    eval(_stdlib)
 
 func halt_fail():
     stop = true
@@ -106,44 +111,12 @@ func do_push_error(err):
 func _has_prefix(word, pre):
     return typeof(word) == TYPE_STRING and word.begins_with(pre)
 
-func call_method(push_nulls=false):
-    var on = _pop(); var name = _pop(); var margs = _pop().duplicate()
-    #do_print(on, name, margs, push_nulls)
-    _dispatch(on, name, margs, push_nulls)
-
 const argNames = ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"]
 
 # TODO: Event select via bound params used for "select context"
 
-func _dispatch(on, name, margs, push_nulls = false):
-    if typeof(on) == TYPE_OBJECT:
-        var ret = on.callv(name, margs)
-        if ret != null or push_nulls:
-            _push(ret)
-    else:
-        var expr = Expression.new()
-        var anames = argNames.slice(0, len(margs) - 1)
-        if len(margs) == 0:
-            anames = []
-        var toParse = str("m.", name,"(", ", ".join(anames), ")")
-        anames.append("m")
-        if expr.parse(toParse, anames) != OK:
-            stop = true
-            is_error = true
-            return
-
-        margs.append(on)
-        if trace > 0:
-            pass
-        # do_print([toParse, anames, margs])
-        var ret = expr.execute(margs)
-
-        if ret != null or push_nulls:
-            _push(ret)
-
 const _stdlib = """
 : stop suspend ;
-: box 1 narray ;
 : nip swap drop ;
 : over shuf: ab aba ;
 : rot shuf: abc bca ;
@@ -285,9 +258,6 @@ var OP_L_STORE_3 = iota("OP_L_STORE_3")
 var OP_L_HERE_NEXT = iota("OP_L_HERE_NEXT")
 
 var OP_STACK_CLEAR = iota("OP_STACK_CLEAR")
-var OP_CALL_METHOD = iota("OP_CALL_METHOD")
-var OP_CALL_METHOD_NULL = iota("OP_CALL_METHOD_NULL")
-var OP_CALL_METHOD_LIT = iota("OP_CALL_METHOD_LIT", 1)
 
 var OP_NARRAY = iota("OP_NARRAY")
 var OP_NEW_DICT = iota("OP_NEW_DICT")
@@ -359,14 +329,6 @@ func print_code():
     do_print("]")
         
 var lex
-func prep():
-    lex = LEX.new()
-    for p in get_property_list():
-        if p.name.begins_with("OP_"):
-            decode_table[get(p.name)] = p.name
-    CODE.append(OP_END_EVAL)
-    eval(_stdlib)
-            
 
 func assoc_constant(value):
     var idx = constant_pool.find(value)
@@ -452,17 +414,8 @@ var _comp_map = {
     "true": [OP_LIT, assoc_constant(true)],
     "false": [OP_LIT, assoc_constant(false)],
     "null": [OP_LIT, assoc_constant(null)],
-    "SP": [OP_LIT, assoc_constant(" ")],
-    "DQ": [OP_LIT, assoc_constant('"')],
-    "SQ": [OP_LIT, assoc_constant("'")],
-    "TAB": [OP_LIT, assoc_constant("\t")],
-    "CR": [OP_LIT, assoc_constant("\r")],
-    "NL": [OP_LIT, assoc_constant("\n")],
-    "COLON": [OP_LIT, assoc_constant(":")],
-    "ES": [OP_LIT, assoc_constant("")],
     "1+": [OP_LIT, assoc_constant(1), OP_ADD],
     "1-": [OP_LIT, assoc_constant(1), OP_SUB],
-    "File": [OP_LIT, assoc_constant(File)],
     "eval": OP_EVAL,
     "if-else": OP_IF_ELSE,
     "while": [OP_L_PUSH, OP_LIT, assoc_constant(true), OP_WHILE],
@@ -472,7 +425,6 @@ var _comp_map = {
     "recover-vm": OP_RECOVER,
     "reset-vm": OP_RESET,
     "_s": OP_PRINT_STACK,
-    "class-db": [OP_LIT,assoc_constant(ClassDB)],
     "goto-if-true": OP_GOTO_WHEN_TRUE,
     "u<": OP_U_PUSH, "u>": OP_U_POP, "u@": OP_U_FETCH, "u@1": OP_U_FETCH_1, "u@2": OP_U_FETCH_2, 
     "u!0": OP_U_STORE, "u!1": OP_U_STORE_1, "u!2": OP_U_STORE_2,
@@ -480,8 +432,6 @@ var _comp_map = {
     "l@0": OP_L_FETCH, "l@1": OP_L_FETCH_1, "l@2": OP_L_FETCH_2, "l@3": OP_L_FETCH_3,
     "l!0": OP_L_STORE, "l!1": OP_L_STORE_1, "l!2": OP_L_STORE_2, "l!3": OP_L_STORE_3,
     "l<here+": OP_L_HERE_NEXT,
-    "call-method": OP_CALL_METHOD,
-    "call-method-null": OP_CALL_METHOD_NULL,
     "clear-stack": OP_STACK_CLEAR,
     "def": OP_DEF,
     "narray": OP_NARRAY,
@@ -490,12 +440,11 @@ var _comp_map = {
     "get": OP_NTH,
     "nth": OP_NTH,
     "print": OP_PRINT,
-    "range": OP_RANGE,
     "VM": OP_VM,
     "swap": OP_SWAP,
     "drop": OP_DROP,
     "dup": OP_DUP,
-    "len": OP_LEN,
+    "len": OP_LEN, # maybe remove, replace with len(*) ?
     "self": OP_SELF,
     "stack-size": OP_STACK_SIZE,
     "suspend": OP_SUSPEND,
@@ -911,22 +860,6 @@ func OP_VM(vm):
     vm._push(vm)
     vm.IP += 1
 
-# TODO: remove
-func OP_CALL_METHOD_LIT(vm):
-    var mname = vm.constant_pool[vm.CODE[vm.IP+1]]
-    vm._dispatch(vm._pop(), mname, [], false)
-    vm.IP += 2
-
-# TODO: remove
-func OP_CALL_METHOD(vm):
-    vm.call_method(false)
-    vm.IP += 1
-
-# TODO: remove
-func OP_CALL_METHOD_NULL(vm):
-    vm.call_method(true)
-    vm.IP += 1
-
 func OP_STACK_CLEAR(vm):
     vm.stack.clear()
     vm.IP += 1
@@ -1073,9 +1006,6 @@ func OP_PRINT_STACK(vm):
 func OP_LEN(vm):
     var toLen = vm._pop()
     vm._push(len(toLen))
-    vm.IP += 1
-func OP_RANGE(vm):
-    vm._push(range(vm._pop()))
     vm.IP += 1
 
 
