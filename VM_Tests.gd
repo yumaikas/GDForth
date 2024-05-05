@@ -127,10 +127,15 @@ func pair(a, b):
 
 func test_methods(vm):
     vm.bind_instance(self)
-    vm.eval("self &derp()")
+    vm.eval("self .derp()")
     stack_assert(vm, [true], "No-arg method calls work", true)
-    vm.eval("self &pair( 1 2 )")
+    vm.eval("1 2 self .pair(**)")
     stack_assert(vm, [[1,2]], "Arg method calls work", true)
+
+func test_constants(vm):
+    vm.bind_instance(self)
+    vm.eval("@File.READ")
+    stack_assert(vm, [File.READ], "Global scope access works")
 
 const GDForth = preload("./GDForthAlpha.gd")
 
@@ -141,7 +146,6 @@ func test_loop(vm):
     stack_assert(vm, [10],  "each works", true)
     vm.eval("0 10 [ 1+ ] times")
     stack_assert(vm, [10], "times works", true)
-
 
 
 func __ignore_test_bench_loop(vm):
@@ -228,9 +232,6 @@ func __ignore_test_bench_loop(vm):
         print()
     
 func test_strings(vm):
-    vm.eval("{ :Foo SP :BAR TAB :baz }:")
-    stack_assert(vm, ["Foo BAR\tbaz"], "}: works", true)
-
     vm.eval('"This is a string"')
     stack_assert(vm, ["This is a string"], "Basic quoted strings", true)
 
@@ -241,6 +242,9 @@ func test_strings(vm):
     stack_assert(vm, ["This is \t\r\n string"], "tab, carriage retrun, and newline escapes work", true)
     vm.eval('" "')
     stack_assert(vm, [" "], "spaces work", true)
+
+    vm.eval("{ :Foo SP :BAR TAB :baz }:")
+    stack_assert(vm, ["Foo BAR\tbaz"], "}: works", true)
 
 func _ignore_test_classdb(vm):
     vm.eval("class-db &get_class_list() [ print ] each")

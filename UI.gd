@@ -10,20 +10,19 @@ var printed = []
 
 
 var listener_scripts = """
-    : v2 ( a b -- v ) util &v2( nom nom ) ;
-    : ^ ( name -- instance ) class-db &instance( nom ) ;
-    : $ ( path -- node/null ) self &get_node( nom )? ;
-    : bye ( -- ) self &get_tree() &quit() ;
+    : v2 ( a b -- v ) Vector2(**) ;
+    : $ ( path -- node/null ) self .get_node(*) ;
+    : bye ( -- ) self .get_tree() .quit()! ;
     : null? ( -- ) null eq? ;
-    : ls ( -- ) self &get_children() [ print ] each ;
+    : ls ( -- ) self .get_children() [ print ] each ;
     :: cd ( to -- ) =path 
-        self &get_node( *path )? =to
+        *path self .get_node(*) =to
         *to null? not
-            [ VM &bind_instance( *to ) ] 
+            [ *to VM .bind_instance(*) ] 
             [ { :Error :tried :to :switch :invalid :path *path }: print ] 
         if-else
     ; 
-    : to-canvas :/root/all/cols/canvas cd ;
+    : to-canvas "/root/all/cols/canvas" cd ;
 
 """
 
@@ -83,7 +82,7 @@ func _init():
     show_state("GDForth UI Ready!\n")
 
 func on_script_end():
-    show_state("script ended")
+    show_state("script ended\n")
     
 func show_state(prefix):
     var output = PoolStringArray()

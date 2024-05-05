@@ -8,12 +8,6 @@ signal suspended
 signal do_print(item)
 signal do_error(err)
 
-class Util:
-    func v2(a, b):
-        return Vector2(a, b)
-
-var util = Util.new()
-
 var m
 var IP = -1 
 
@@ -34,6 +28,7 @@ var in_evt = false
 var instance
 
 var Binds = GDScript.new()
+var bind_refs = {}
 
 func __prep():
     stack.resize(8)
@@ -161,17 +156,13 @@ const _stdlib = """
 : pos? 0 gt? ;
 : 2drop drop drop ;
 : 3drop drop drop drop ;
-: ) stack-size u> - narray u> u> call-method ;
-: )? stack-size u> - narray u> u> call-method-null ;
-: nom u> 1 - u< ( eat parameters into a method call ) ;
-: }: stack-size u> - narray "" &join( nom ) ;
+: }: stack-size u> - narray "" .join(*) ;
 : not ( t/f -- f/t ) [ false ] [ true ] if-else ;
 : WRITE 2 ;
-: READ 1 ;
 : OK 0 ;
-: print-raw ( toprint -- ) VM &do_printraw( nom ) ;
-:: load ( path -- .. ) =path File &new() =f 
-    *f &open( *path READ ) dup OK eq? [ drop *f &get_as_text() eval OK ] if ;
+: print-raw ( toprint -- ) VM .do_printraw(*)! ;
+:: load ( path -- .. ) =path File.new() =f 
+    *path @File.READ *f .open(**) dup OK eq? [ drop *f .get_as_text() eval OK ] if ;
 
 : each ( arr block -- .. ) 0 u< u< u<
     u@ len pos? [ 
@@ -213,7 +204,9 @@ func do(word, a0=null, a1=null, a2=null, a3=null, a4=null, a5=null, a6=null, a7=
 func eval(script):
     _r_push(IP)
     IP = len(CODE)
-    if "err" in comp(script):
+    var res = comp(script)
+    if "err" in res:
+        do_push_error(str(res.err))
         return
     CODE.append(OP_END_EVAL)
     exec()
@@ -382,40 +375,61 @@ func assoc_constant(value):
         return len(constant_pool) - 1
     return idx
 
-func parse_token_method_call(tok):
+func parse_call_token(tok, is_method):
     # Expected form: & <method-name> '(' '*' 0-n times ')'
     var name = ""
     var argCount = 0
     var idx = 0
-    if tok[idx] != "&":
-        return { "valid": false }
-    idx += 1
 
     while idx < len(tok):
         if tok[idx] == "(":
+            idx += 1
             break
-        if tok[idx] == ")":
+        elif tok[idx] == ")":
             return { "valid": false, "error": str("Unmatched ) in call, parsing: ", tok) }
-        name += tok[idx]
-    if idx > len(tok) - 3:
+        else:
+            name += tok[idx]
+            idx += 1
+    if idx > len(tok) - 1:
         return { "valid": false, "error": str("Method call missing '(' and ')', parsing: ", tok) }
+
     while idx < len(tok):
         if tok[idx] == '*':
             argCount += 1
+            idx += 1
         elif tok[idx] == ")":
+            idx += 1
             break
         else:
             return { 
                 "valid": false, 
                 "error": str("Invalid character in argument count description: ", tok[idx], " parsing: ", tok)
             }
+    var discard = tok.ends_with("!")
 
+    var bindName = str(name, "_", argCount)
+    if not discard:
+        bindName += "_ret"
+    if is_method:
+        bindName = "m_" + bindName
+        
     return {
         "valid": true,
         "name": name,
         "argCount": argCount,
+        "discard": discard,
+        "bindName": bindName.replace(".", "_dot_"),
     }
     
+func try_compile_bind(code, tok):
+    var old_code = Binds.source_code
+
+    Binds.source_code += code
+    if Binds.reload(true) != OK:
+        Binds.source_code = old_code
+        Binds.reload(true)
+        return {"err": str("Failed to compile bind code for ", tok)}
+    return {}
 
 func _comp_method_setup(to):
     CODE.append_array([
@@ -424,16 +438,20 @@ func _comp_method_setup(to):
             OP_STACK_SIZE, OP_U_PUSH
     ])
 
+func dump_binds(vm):
+    print(vm.Binds.source_code)
+    vm.IP += 1
+
 var _comp_map = {
     "+": OP_ADD, "-": OP_SUB, "*": OP_MUL, "div": OP_DIV,
     "lt?": OP_LT, "le?": OP_LE, "gt?": OP_GT, "ge?": OP_GE,
     "eq?": OP_EQ,
     "and": OP_AND,
     "or": OP_OR,
+    "debug-binds": funcref(self, "dump_binds"),
     "true": [OP_LIT, assoc_constant(true)],
     "false": [OP_LIT, assoc_constant(false)],
     "null": [OP_LIT, assoc_constant(null)],
-    "util": [OP_LIT, assoc_constant(util)],
     "SP": [OP_LIT, assoc_constant(" ")],
     "DQ": [OP_LIT, assoc_constant('"')],
     "SQ": [OP_LIT, assoc_constant("'")],
@@ -483,15 +501,41 @@ var _comp_map = {
     "suspend": OP_SUSPEND,
 }
 
+func code_gen_call(call_info, is_method):
+    var codeGen = []
+    codeGen.append(str("func ", call_info.bindName, "(vm):\n"))
+    if is_method:
+        codeGen.append("    var me = vm._pop()\n")
+
+    for i in call_info.argCount:
+        codeGen.append(str("    var a", call_info.argCount - i - 1, " = vm._pop()\n"))
+    codeGen.append("    ")
+
+    if not call_info.discard:
+        codeGen.append("var ret = ")
+
+    if is_method:
+        codeGen.append("me.")
+    codeGen.append(str(call_info.name, "("))
+
+    for i in call_info.argCount:
+        codeGen.append(str("a", i))
+        codeGen.append(", ")
+    if call_info.argCount > 0:
+        codeGen.pop_back()
+    codeGen.append(")\n")
+
+    if not call_info.discard:
+        codeGen.append("    vm._push(ret)\n")
+    codeGen.append("    vm.IP += 1\n\n")
+    return "".join(codeGen)
+    
+
 func compile(tokens):
     var t_idx = 0
     while t_idx < len(tokens):
         var tok = tokens[t_idx]
-        if tok.begins_with("."):
-            CODE.append(OP_GET_MEMBER)
-            CODE.append(assoc_constant(tok.substr(1)))
-            t_idx+=1
-        elif tok.begins_with(">"):
+        if tok.begins_with(">"):
             CODE.append(OP_SET_MEMBER)
             CODE.append(assoc_constant(tok.substr(1)))
             t_idx+=1
@@ -501,24 +545,46 @@ func compile(tokens):
                 OP_SET_MEMBER, CODE.append(assoc_constant(tok.substr(1)))
             ])
             t_idx+=1
-        elif tok.begins_with("&"):
-            var method_call_info = parse_token_method_call(tok)
-            if method_call_info.valid:
-                pass
+        elif tok.ends_with(")") or tok.ends_with(")!"):
+            var is_method = tok.begins_with(".")
+            var call_name = tok
+            if is_method:
+                call_name = call_name.substr(1)
+
+            var call_info = parse_call_token(call_name, is_method)
+            if call_info.valid and not bind_refs.has(call_info.bindName):
+                var status = try_compile_bind(code_gen_call(call_info, is_method), tok)
+                if "err" in status:
+                    return {"err": status.err }
+                var ref = funcref(self, call_info.bindName)
+                bind_refs[call_info.bindName] = ref
+                CODE.append(ref)
+                t_idx += 1
+            elif bind_refs.has(call_info.bindName):
+                var ref = bind_refs[call_info.bindName]
+                CODE.append(ref)
+                t_idx += 1
             else:
-                pass
-            if tok.ends_with(")"):
-                _comp_method_setup(tok.substr(1, len(tok)-2))
-                t_idx+=1
-            elif tok.ends_with("()"):
-                CODE.append_array([
-                    OP_CALL_METHOD_LIT, assoc_constant(tok.substr(1, len(tok)-3))
-                ])
-                t_idx+=1
-            else:
-                var err = str("Could not compile ", tok, " as a call")
-                do_push_error(err)
-                return { "err": err }
+                do_push_error(call_info.error)
+                return { "err": call_info.error }
+
+        elif tok.begins_with("@"):
+            var globalName = tok.substr(1)
+            var bindName = str("global_", globalName).replace(".", "_dot_")
+
+            if not bind_refs.has(bindName):
+                try_compile_bind("".join([
+                    "func ", bindName, "(vm):\n",
+                    "    vm._push(", globalName, ")\n",
+                    "    vm.IP += 1\n\n",
+                ]), tok)
+                bind_refs[bindName] = funcref(self, bindName)
+            CODE.append(bind_refs[bindName])
+            t_idx += 1
+        elif tok.begins_with("."):
+            CODE.append(OP_GET_MEMBER)
+            CODE.append(assoc_constant(tok.substr(1)))
+            t_idx+=1
         elif tok.begins_with('"'):
             CODE.append_array([OP_LIT, assoc_constant(tok.substr(1, len(tok)-2))])
             t_idx += 1
@@ -576,7 +642,7 @@ func compile(tokens):
             var to_comp = tokens.slice(t_idx + 2, SEEK - 1)
 
             var status = compile(to_comp)
-            if "err" in status:
+            if status.has("err"):
                 return status
 
             if tok in ["::", "evtl:"]:
@@ -642,7 +708,15 @@ func compile(tokens):
             do_print(str(dict.keys()))
             do_push_error(err)
             return {"err": err}
+    # print(Binds.source_code)
+    Binds.reload(true)
+    bindlib = Binds.new()
+    
+    for k in bind_refs.keys():
+        bind_refs[k].set_instance(bindlib)
     return {}
+
+var bindlib
 
 func sig_resume(a0=null, a1=null, a2=null, a3=null, a4=null, a5=null, a6=null, a7=null, a8=null, a9=null):
     # print("SIG IP AT", IP)
@@ -674,6 +748,7 @@ func exec():
     while IP < len(CODE) and not stop:
         var inst = CODE[IP]
         if inst is FuncRef:
+            # print(inst.function)
             if inst.call_func(self):
                 break
         else:
@@ -683,7 +758,6 @@ func exec():
             do_print(str("Unknown opcode: ", inst, " at ", IP))
     stop = true
     emit_signal("script_end")
-            
 func OP_LIT(vm):
     vm._push(vm.constant_pool[vm.CODE[vm.IP+1]])
     vm.IP += 2
@@ -997,7 +1071,8 @@ func OP_PRINT_STACK(vm):
     vm.do_print(str(vm.stack))
     vm.IP += 1
 func OP_LEN(vm):
-    vm._push(len(vm._pop()))
+    var toLen = vm._pop()
+    vm._push(len(toLen))
     vm.IP += 1
 func OP_RANGE(vm):
     vm._push(range(vm._pop()))

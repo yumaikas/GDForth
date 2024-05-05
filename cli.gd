@@ -8,7 +8,9 @@ var forth
 func _init():
     forth = VM.new(self, true)
         
+    print("BEFORE")
     forth.load_lib(LibOutput)
+    print("AFTER")
 
     var os_args = OS.get_cmdline_args()
     for i in len(os_args):
