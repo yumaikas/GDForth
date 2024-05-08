@@ -1,10 +1,14 @@
 class_name GDForth extends Reference
 
 const GDForthVM = preload("./VM.gd")
+const CodeEnv = preload("./CodeEnv.gd")
 
 var stack setget _set_stack, _get_stack
 var VM
+var CODE
 func _init(instance):
+	CODE = CodeEnv.new()
+
     VM = GDForthVM.new()
     VM.bind_instance(instance)
 
@@ -24,3 +28,11 @@ func _get_stack():
     return VM.stack
 func _set_stack(val):
     VM.stack = val
+
+func do_print(toPrint):
+    do_printraw(toPrint)
+    do_printraw("\n")
+
+func do_push_error(err):
+    push_error(err)
+    emit_signal("do_error", err)

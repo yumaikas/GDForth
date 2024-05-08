@@ -8,53 +8,29 @@ signal suspended
 signal do_print(item)
 signal do_error(err)
 
-var m
-var IP = -1 
 
 var trace = 0; var trace_indent = false
+var IP = -1 
 var stack = []; 
 var utilStack = []; 
 var returnStack = []; 
+var callStack = [];
 var loopStack = [];
 var locals = {}
+var stop = true; var is_error = false
+var instance
+
 var dict = {}; 
 var constant_pool = []
 var evts = {};
-var stop = true; var is_error = false
+
 var in_exec = false
 var CODE = []
 var errSymb = {}; var lblSymb = {}; var iterSymb = {}; var prevSymb = {}
 var in_evt = false
-var instance
 
 var Binds = GDScript.new()
 var bind_refs = {}
-
-func __prep():
-    stack.resize(8)
-
-var s_idx = -1
-
-func __lt():
-    var b = stack[s_idx]; s_idx -= 1
-    var a = stack[s_idx]; 
-    stack[s_idx] = a < b
-
-func __inc():
-    stack[s_idx] += 1
-
-func __dup():
-    s_idx += 1
-    stack[s_idx] = stack[s_idx-1]
-
-func __push(val):
-    s_idx += 1
-    stack[s_idx] = val
-
-func ___pop():
-    var ret = stack[s_idx]
-    s_idx -= 1
-    return ret
 
 func _init():
     lex = LEX.new()
@@ -115,47 +91,9 @@ const argNames = ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"]
 
 # TODO: Event select via bound params used for "select context"
 
-const _stdlib = """
-: stop suspend ;
-: nip swap drop ;
-: over shuf: ab aba ;
-: rot shuf: abc bca ;
-: dup-under u< dup u> ;
-: if ( block -- quot/' ) [ ] if-else ;
-: {empty} 0 narray ;
-: { stack-size u< ;
-: } stack-size u> - narray ;
-: 2dup shuf: ab abab ;
-: pos? 0 gt? ;
-: 2drop drop drop ;
-: 3drop drop drop drop ;
-: }: stack-size u> - narray "" .join(*) ;
-: not ( t/f -- f/t ) [ false ] [ true ] if-else ;
-: WRITE 2 ;
-: OK 0 ;
-: print-raw ( toprint -- ) VM .do_printraw(*)! ;
-:: load ( path -- .. ) =path File.new() =f 
-    *path @File.READ *f .open(**) dup OK eq? [ drop *f .get_as_text() eval OK ] if ;
-
-: each ( arr block -- .. ) 0 u< u< u<
-    u@ len pos? [ 
-        u@ u@2 nth u@1 do-block ( execute )
-        u@2 1+ u!2 ( increment )
-        u@ len u@2 gt? ( condition )
-    ]  IF/WHILE u> u> u> 3drop ;
-
-: times ( num block -- ..  ) 
-    ( setup )    l< l< l<here+ ( block num here )
-    ( iterate )  l@1 pos? [ l@2 do-block l@1 1- l!1 ] if l@1 pos? l@ goto-if-true 
-    ( teardown ) l> l> l> 3drop 
-;
-
-"""
-
 
 func comp(script):
-    var toks = tokenize(script)
-    return compile(toks)
+	pass
 
 func do(word, a0=null, a1=null, a2=null, a3=null, a4=null, a5=null, a6=null, a7=null, a8=null, a9=null):
     # print("do, IP at: ", IP)
@@ -190,9 +128,6 @@ func _eval_(script):
     comp(script)
     exec()
 
-func tokenize(script):
-    return lex.tokenize(script)
-    
 
 var lit_counts = {}
 var imm_counts = {}
@@ -290,6 +225,7 @@ var OP_WAIT = iota("OP_WAIT", 1)
 var OP_THROW = iota("OP_THROW")
 var OP_RECOVER = iota("OP_RECOVER")
 var OP_RESET = iota("OP_RESET")
+var OP_BECOME = iota("OP_BECOME")
 
 var OP_STACK_SIZE = iota("OP_STACK_SIZE")
 var OP_VM = iota("OP_VM")
@@ -431,6 +367,7 @@ var _comp_map = {
     "l<": OP_L_PUSH, "l>": OP_L_POP, "l@": OP_L_FETCH,
     "l@0": OP_L_FETCH, "l@1": OP_L_FETCH_1, "l@2": OP_L_FETCH_2, "l@3": OP_L_FETCH_3,
     "l!0": OP_L_STORE, "l!1": OP_L_STORE_1, "l!2": OP_L_STORE_2, "l!3": OP_L_STORE_3,
+	"become": 
     "l<here+": OP_L_HERE_NEXT,
     "clear-stack": OP_STACK_CLEAR,
     "def": OP_DEF,
@@ -479,192 +416,6 @@ func code_gen_call(call_info, is_method):
     codeGen.append("    vm.IP += 1\n\n")
     return "".join(codeGen)
     
-
-func compile(tokens):
-    var t_idx = 0
-    while t_idx < len(tokens):
-        var tok = tokens[t_idx]
-        if tok.begins_with(">"):
-            CODE.append(OP_SET_MEMBER)
-            CODE.append(assoc_constant(tok.substr(1)))
-            t_idx+=1
-        elif tok.begins_with(">>"):
-            CODE.append_array([
-                OP_U_PUSH, OP_DUP, OP_U_POP, # ab -- aab
-                OP_SET_MEMBER, CODE.append(assoc_constant(tok.substr(1)))
-            ])
-            t_idx+=1
-        elif tok.ends_with(")") or tok.ends_with(")!"):
-            var is_method = tok.begins_with(".")
-            var call_name = tok
-            if is_method:
-                call_name = call_name.substr(1)
-
-            var call_info = parse_call_token(call_name, is_method)
-            if call_info.valid and not bind_refs.has(call_info.bindName):
-                var status = try_compile_bind(code_gen_call(call_info, is_method), tok)
-                if "err" in status:
-                    return {"err": status.err }
-                var ref = funcref(self, call_info.bindName)
-                bind_refs[call_info.bindName] = ref
-                CODE.append(ref)
-                t_idx += 1
-            elif bind_refs.has(call_info.bindName):
-                var ref = bind_refs[call_info.bindName]
-                CODE.append(ref)
-                t_idx += 1
-            else:
-                do_push_error(call_info.error)
-                return { "err": call_info.error }
-
-        elif tok.begins_with("@"):
-            var globalName = tok.substr(1)
-            var bindName = str("global_", globalName).replace(".", "_dot_")
-
-            if not bind_refs.has(bindName):
-                try_compile_bind("".join([
-                    "func ", bindName, "(vm):\n",
-                    "    vm._push(", globalName, ")\n",
-                    "    vm.IP += 1\n\n",
-                ]), tok)
-                bind_refs[bindName] = funcref(self, bindName)
-            CODE.append(bind_refs[bindName])
-            t_idx += 1
-        elif tok.begins_with("."):
-            CODE.append(OP_GET_MEMBER)
-            CODE.append(assoc_constant(tok.substr(1)))
-            t_idx+=1
-        elif tok.begins_with('"'):
-            CODE.append_array([OP_LIT, assoc_constant(tok.substr(1, len(tok)-2))])
-            t_idx += 1
-        elif tok.begins_with(":") and tok != ":" and tok != "::":
-            CODE.append_array([OP_LIT, assoc_constant(tok.substr(1))])
-            t_idx+=1
-        elif tok.begins_with("~"):
-            CODE.append_array([OP_WAIT, assoc_constant(tok.substr(1))])
-            t_idx+=1
-        elif tok.begins_with("*") and tok != '*':
-            CODE.append_array([OP_GETLOCAL, assoc_constant(tok.substr(1))])
-            t_idx += 1
-        elif tok.begins_with("%") and tok != '%':
-            CODE.append_array([
-                OP_GETLOCAL, assoc_constant(tok.substr(1)),
-                OP_SWAP, OP_DO_BLOCK,
-                OP_SETLOCAL, assoc_constant(tok.substr(1))
-            ])
-            t_idx += 1
-        elif tok.begins_with("="):
-            CODE.append_array([OP_SETLOCAL, assoc_constant(tok.substr(1))])
-            t_idx += 1
-        elif tok == "shuf:":
-            CODE.append_array([
-                OP_SHUFFLE, 
-                assoc_constant(tokens[t_idx+1]), 
-                assoc_constant(tokens[t_idx+2]),
-            ])
-            t_idx += 3
-            
-        elif tok in [":", "::", "evt:", "evtl:"]:
-            var name = tokens[t_idx + 1]
-            # print("NAME: ", name)
-            var SEEK = t_idx + 2
-
-            while tokens[SEEK] != ";":
-                # print("\t", tokens[SEEK])
-                if tokens[SEEK] in [":", "::", "evt:", "evtl:"]:
-                    var err = str("Cannot nest `", tok, "`, while defining '", name, "'")
-                    do_push_error(err)
-                    return { "err": err }
-                SEEK += 1
-                if SEEK >= len(tokens):
-                    var err = str("Missing closing semicolon ", tokens[t_idx + 1])
-                    do_push_error(err)
-                    return { "err": err }
-
-            CODE.append_array([OP_GOTO, 0])
-            dict[name] = len(CODE)
-            if tok in ["evt:", "evtl:"]:
-                evts[name] = len(CODE)
-            if tok in ["::", "evtl:"]:
-                CODE.append(OP_PUSH_SCOPE)
-
-            var to_comp = tokens.slice(t_idx + 2, SEEK - 1)
-
-            var status = compile(to_comp)
-            if status.has("err"):
-                return status
-
-            if tok in ["::", "evtl:"]:
-                CODE.append(OP_DROP_SCOPE)
-            CODE.append(OP_RETURN)
-            CODE[dict[name]-1] = assoc_constant(len(CODE))
-
-            t_idx = SEEK + 1
-            
-        elif tok == "[":
-            var SEEK = t_idx + 1
-            var DEPTH = 1
-            while DEPTH > 0:
-                if tokens[SEEK] == "[": DEPTH += 1
-                elif tokens[SEEK] == "]": DEPTH -= 1
-                if SEEK > len(tokens):
-                    var err = str("Unmatched [")
-                    do_push_error(err)
-                    return {"err": err}
-                SEEK += 1
-
-            CODE.append_array([OP_BLOCK_LIT, 0, 0])
-            var slot_1 = len(CODE) - 2
-            var slot_2 = len(CODE) - 1
-            compile(tokens.slice(t_idx + 1, SEEK - 2))
-            CODE[slot_2] = assoc_constant(slot_2 + 1)
-            CODE.append(OP_RETURN)
-            CODE[slot_1] = assoc_constant(len(CODE))
-            t_idx = SEEK 
-        elif tok == "(":
-            var SEEK = t_idx + 1;
-            var DEPTH = 1
-            while DEPTH > 0:
-                if tokens[SEEK] == "(": DEPTH += 1
-                elif tokens[SEEK] == ")": DEPTH -= 1
-                if SEEK > len(tokens):
-                    var err = str("Unmatched (")
-                    do_push_error(err)
-                    return {"err": err}
-                SEEK += 1
-            t_idx = SEEK
-        elif tok.is_valid_integer():
-            CODE.append_array([OP_LIT, assoc_constant(int(tok))])
-            t_idx += 1
-        elif tok.is_valid_float():
-            CODE.append_array([OP_LIT, assoc_constant(float(tok))])
-            t_idx += 1
-        elif tok in dict:
-            if typeof(dict[tok]) == TYPE_ARRAY: 
-                CODE.append_array(dict[tok])
-            else:
-                CODE.append_array([OP_CALL, dict[tok]])
-            t_idx += 1
-        elif tok in _comp_map:
-            if typeof(_comp_map[tok]) == TYPE_ARRAY:
-                CODE.append_array(_comp_map[tok])
-            else:
-                CODE.append(_comp_map[tok])
-            t_idx += 1
-        else:
-            var err = str("Unrecognized command: ", tok)
-            do_print(str(_comp_map.keys()))
-            do_print(str(dict.keys()))
-            do_push_error(err)
-            return {"err": err}
-    # print(Binds.source_code)
-    Binds.reload(true)
-    bindlib = Binds.new()
-    
-    for k in bind_refs.keys():
-        bind_refs[k].set_instance(bindlib)
-    return {}
-
 var bindlib
 
 func sig_resume(a0=null, a1=null, a2=null, a3=null, a4=null, a5=null, a6=null, a7=null, a8=null, a9=null):
@@ -707,305 +458,4 @@ func exec():
             do_print(str("Unknown opcode: ", inst, " at ", IP))
     stop = true
     emit_signal("script_end")
-func OP_LIT(vm):
-    vm._push(vm.constant_pool[vm.CODE[vm.IP+1]])
-    vm.IP += 2
-func OP_CALL(vm):
-    vm._r_push(vm.IP+2)
-    vm.IP = vm.CODE[vm.IP+1]
-func OP_U_PUSH(vm):
-    vm._u_push(vm._pop())
-    vm.IP += 1
-func OP_U_POP(vm):
-    vm._push(vm._u_pop())
-    vm.IP += 1
-func OP_U_FETCH(vm):
-    vm._push(vm.utilStack[len(vm.utilStack)-1])
-    vm.IP += 1
-func OP_U_FETCH_1(vm):
-    vm._push(vm.utilStack[len(vm.utilStack)-2])
-    vm.IP += 1
-func OP_U_FETCH_2(vm):
-    vm._push(vm.utilStack[len(vm.utilStack)-3])
-    vm.IP += 1
-func OP_U_STORE(vm):
-    vm.utilStack[len(vm.utilStack)-1] = _pop()
-    IP += 1
-func OP_U_STORE_1(vm):
-    vm.utilStack[len(vm.utilStack)-2] = vm._pop()
-    vm.IP += 1
-func OP_U_STORE_2(vm):
-    vm.utilStack[len(vm.utilStack)-3] = vm._pop()
-    vm.IP += 1
-func OP_L_PUSH(vm):
-    vm._l_push(vm._pop())
-    vm.IP += 1
-func OP_L_POP(vm):
-    vm._push(vm._l_pop())
-    vm.IP += 1
-func OP_L_FETCH(vm):
-    vm._push(vm.loopStack.back())
-    vm.IP += 1
-func OP_L_FETCH_1(vm):
-    vm._push(vm.loopStack[len(vm.loopStack)-2])
-    IP += 1
-func OP_L_FETCH_2(vm):
-    vm._push(loopStack[len(vm.loopStack)-3])
-    vm.IP += 1
-func OP_L_FETCH_3(vm):
-    vm._push(vm.loopStack[len(vm.loopStack)-4])
-    vm.IP += 1
-func OP_L_STORE(vm):
-    vm.loopStack[len(vm.loopStack)-1] = vm._pop()
-    vm.IP += 1
-func OP_L_STORE_1(vm):
-    vm.loopStack[len(vm.loopStack)-2] = vm._pop()
-    vm.IP += 1
-func OP_L_STORE_2(vm):
-    vm.loopStack[len(vm.loopStack)-3] = vm._pop()
-    vm.IP += 1
-func OP_L_STORE_3(vm):
-    vm.loopStack[len(vm.loopStack)-4] = vm._pop()
-    vm.IP += 1
-func OP_L_HERE_NEXT(vm):
-    vm._l_push(vm.IP+1)
-    vm.IP += 1
-func OP_WAIT(vm):
-    # print("WAIT IP AT", IP)
-    if vm.in_evt:
-        vm.do_print("ERROR: suspended in evt_call!")
-        vm.halt_fail()
-        return
-    var obj = vm._pop()
-    var sig = vm.constant_pool[vm.CODE[vm.IP+1]]
-    if not obj.is_connected(sig, vm, "sig_resume"):
-        if vm.trace > 0: vm.do_print("connecting")
-        obj.connect(sig, vm, "sig_resume", [], CONNECT_ONESHOT | CONNECT_DEFERRED)
-    else:
-        vm.do_print(str("Already connected to ", obj))
-    vm.stop = true
-    vm.IP += 2
-    # print("WAIT IP AT", IP)
-func OP_THROW(vm):
-    var maybe_err = vm._pop()
-    if not (typeof(maybe_err) == typeof(OK) and maybe_err == OK):
-        vm.halt_fail()
-        return
-    else:
-        vm.IP += 1
-func OP_RECOVER(vm):
-    vm.do_print("Recover is a no-op outside resuming a faulted VM")
-    vm.IP += 1
-func OP_RESET(vm):
-    vm.stack = []; 
-    vm.utilStack = []; 
-    vm.returnStack = []; 
-    vm.loopStack = [];
-    vm.locals = {}
-    vm.IP += 1
-func OP_SHUFFLE(vm):
-    var shuf_locals = {}
-    var input = vm.constant_pool[vm.CODE[vm.IP+1]]
-    var output = vm.constant_pool[vm.CODE[vm.IP+2]]
-
-    for i in len(input):
-        var idx = len(input) - i - 1
-        var c = input[idx]
-        shuf_locals[c] = vm._pop()
-    for c in output:
-         vm._push(shuf_locals[c])
-    vm.IP += 3
-func OP_BLOCK_LIT(vm):
-    vm._push(vm.constant_pool[vm.CODE[vm.IP+2]])
-    vm.IP = vm.constant_pool[vm.CODE[vm.IP+1]]
-func OP_RETURN(vm):
-    vm.IP = vm._r_pop()
-func OP_DO_BLOCK(vm):
-    vm._r_push(IP+1)
-    var lbl = vm._pop()
-    vm.IP = lbl
-
-func OP_WHILE(vm):
-    var cont = vm._pop()
-    if cont:
-        vm._r_push(vm.IP)
-        vm.IP = vm.loopStack.back()
-    else:
-        vm._l_pop()
-        vm.IP += 1
-
-func OP_GET_MEMBER(vm):
-    vm._push(vm._pop().get(vm.constant_pool[vm.CODE[vm.IP+1]]))
-    vm.IP += 2
-func OP_DEF(vm):
-    var block = vm._pop()
-    var name = vm._pop()
-    vm.dict[name] = block
-    vm.IP += 1
-func OP_SET_MEMBER(vm):
-    var to = vm._pop()
-    var on = vm._pop()
-    on.set(vm.constant_pool[vm.CODE[vm.IP+1]], to)
-    vm.IP += 2
-func OP_PUT(vm):
-    var at = vm._pop()
-    var on = vm._pop()
-    var to = vm._pop()
-    on[at] = to
-    vm.IP += 1
-func OP_SELF(vm):
-    vm._push(vm.instance)
-    vm.IP += 1
-func OP_VM(vm):
-    vm._push(vm)
-    vm.IP += 1
-
-func OP_STACK_CLEAR(vm):
-    vm.stack.clear()
-    vm.IP += 1
-
-func OP_STACK_SIZE(vm):
-    vm._push(len(vm.stack))
-    vm.IP += 1
-
-
-func OP_NARRAY(vm):
-    var n = _pop(); 
-    if n == 0:
-        vm._push([])
-    else:
-        # TODO: Optimize to slice + resize
-        var top = []
-        for i in n: top.append(vm._pop())
-        top.invert(); vm._push(top)
-    vm.IP += 1
-func OP_NEW_DICT(vm):
-    vm._push({})
-    vm.IP += 1
-
-func OP_SUSPEND(vm):
-    vm.stop = true
-    vm.IP += 1
-    vm.emit_signal("suspended")
-    return true
-
-func OP_EVAL(vm):
-    vm._r_push(vm.IP+1)
-    vm._eval_(vm._pop())
-
-func OP_END_EVAL(vm):
-    vm.stop = true
-    vm.IP = vm._r_pop()
-    vm.emit_signal("eval_complete")
-    return true
-
-func OP_NTH(vm):
-    var at = vm._pop(); var arr = vm._pop();
-    vm._push(arr[at])
-    vm.IP += 1
-
-func OP_IF_ELSE(vm):
-    var false_lbl = vm._pop() 
-    var true_lbl = vm._pop()
-    var cond = vm._pop()
-    if cond:
-        vm._r_push(vm.IP+1); vm.IP = true_lbl
-    else:
-        vm._r_push(vm.IP+1); vm.IP = false_lbl
-func OP_GOTO(vm):
-    vm.IP = vm.constant_pool[vm.CODE[vm.IP+1]]
-func OP_GOTO_WHEN_TRUE(vm):
-    var JUMP = vm._pop()
-    if vm._pop(): 
-        vm.IP = JUMP
-    else:
-        vm.IP += 1
-func OP_DUP(vm):
-    vm.stack.push_back(vm.stack.back())
-    vm.IP += 1
-func OP_DROP(vm):
-    vm.stack.pop_back()
-    vm.IP += 1
-func OP_SWAP(vm):
-    var a = vm.stack[len(vm.stack)-1]
-    vm.stack[len(vm.stack)-1] = vm.stack[len(vm.stack)-2]
-    vm.stack[len(vm.stack)-2] = a
-    vm.IP += 1
-func OP_PUSH_SCOPE(vm):
-    var old_locals = vm.locals
-    vm.locals = { vm.prevSymb: old_locals }
-    vm.IP += 1
-func OP_DROP_SCOPE(vm):
-    var old_locals = vm.locals[vm.prevSymb]
-    vm.locals = old_locals
-    vm.IP += 1
-func OP_GET_SCOPE(vm):
-    vm._push(vm.locals)
-    vm.IP += 1
-func OP_SET_SCOPE(vm):
-    vm.locals = vm._pop()
-    vm.IP += 1
-func OP_SETLOCAL(vm):
-    var local_key = vm.constant_pool[vm.CODE[vm.IP+1]]
-    vm.locals[local_key] = vm._pop()
-    vm.IP += 2
-func OP_GETLOCAL(vm):
-    var local_key = vm.constant_pool[vm.CODE[vm.IP+1]]
-    vm._push(vm.locals[local_key])
-    vm.IP += 2
-func OP_ADD(vm):
-    var b = vm._pop(); var a = vm._pop();
-    vm._push(a + b)
-    vm.IP += 1
-func OP_SUB(vm):
-    var b = vm._pop(); var a = vm._pop();
-    vm._push(a - b)
-    vm.IP += 1
-func OP_MUL(vm):
-    var b = vm._pop(); var a = vm._pop();
-    vm._push(a * b)
-    vm.IP += 1
-func OP_DIV(vm):
-    var b = vm._pop(); var a = _pop();
-    _push(a / b)
-    vm.IP += 1
-func OP_GT(vm):
-    var b = vm._pop(); var a = vm._pop();
-    vm._push(a > b)
-    vm.IP += 1
-func OP_LT(vm):
-    var b = vm._pop(); var a = vm._pop();
-    vm._push(a < b)
-    vm.IP += 1
-func OP_GE(vm):
-    var b = vm._pop(); var a = vm._pop();
-    vm._push(a >= b)
-    vm.IP += 1
-func OP_LE(vm):
-    var b = vm._pop(); var a = vm._pop();
-    vm._push(a <= b)
-    vm.IP += 1
-func OP_EQ(vm):
-    var b = vm._pop(); var a = vm._pop();
-    vm._push(typeof(a) == typeof(b) and a == b)
-    vm.IP += 1
-func OP_AND(vm):
-    var b = vm._pop(); var a = vm._pop();
-    vm._push(a and b)
-    vm.IP += 1
-func OP_OR(vm):
-    var b = vm._pop(); var a = vm._pop();
-    vm._push(a or b)
-    vm.IP += 1
-func OP_PRINT(vm):
-    vm.do_print(vm._pop())
-    vm.IP += 1
-func OP_PRINT_STACK(vm):
-    vm.do_print(str(vm.stack))
-    vm.IP += 1
-func OP_LEN(vm):
-    var toLen = vm._pop()
-    vm._push(len(toLen))
-    vm.IP += 1
-
 
