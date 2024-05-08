@@ -24,6 +24,7 @@ func _init():
 
 var decode_table = {}
 
+
 func print_code():
     var num_lits = 0
     var num_immediates = 0
@@ -33,7 +34,7 @@ func print_code():
         do_printraw(str(idx, ": "))
         idx += 1
         if num_lits > 0:
-            do_print(str("\t", constant_pool[o]))
+            do_print(str("\t", o))
             num_lits -= 1
         elif num_immediates > 0:
             do_print(str("\t", o))
@@ -46,6 +47,104 @@ func print_code():
                 num_immediates += imm_counts[o]
     do_print("]")
 
+func try_compile_bind(code, tok):
+    var old_code = Binds.source_code
+
+    Binds.source_code += code
+    if Binds.reload(true) != OK:
+        Binds.source_code = old_code
+        Binds.reload(true)
+        return {"err": str("Failed to compile bind code for ", tok)}
+    return {}
+
+func dump_binds(vm):
+    print(vm.Binds.source_code)
+    vm.IP += 1
+
+func _comp_method_setup(to):
+    CODE.append_array([
+            guts.OP_U_PUSH,
+            guts.OP_LIT, to, guts.OP_U_PUSH,
+            guts.OP_STACK_SIZE, guts.OP_U_PUSH
+    ])
+
+func parse_call_token(tok, is_method):
+    # Expected form: & <method-name> '(' '*' 0-n times ')'
+    var name = ""
+    var argCount = 0
+    var idx = 0
+
+    while idx < len(tok):
+        if tok[idx] == "(":
+            idx += 1
+            break
+        elif tok[idx] == ")":
+            return { "valid": false, "error": str("Unmatched ) in call, parsing: ", tok) }
+        else:
+            name += tok[idx]
+            idx += 1
+    if idx > len(tok) - 1:
+        return { "valid": false, "error": str("Method call missing '(' and ')', parsing: ", tok) }
+
+    while idx < len(tok):
+        if tok[idx] == '*':
+            argCount += 1
+            idx += 1
+        elif tok[idx] == ")":
+            idx += 1
+            break
+        else:
+            return { 
+                "valid": false, 
+                "error": str("Invalid character in argument count description: ", tok[idx], " parsing: ", tok)
+            }
+    var discard = tok.ends_with("!")
+
+    var bindName = str(name, "_", argCount)
+    if not discard:
+        bindName += "_ret"
+    if is_method:
+        bindName = "m_" + bindName
+        
+    return {
+        "valid": true,
+        "name": name,
+        "argCount": argCount,
+        "discard": discard,
+        "bindName": bindName.replace(".", "_dot_"),
+    }
+
+func code_gen_call(call_info, is_method):
+    var codeGen = []
+    codeGen.append(str("func ", call_info.bindName, "(vm):\n"))
+    if is_method:
+        codeGen.append("    var me = vm._pop()\n")
+
+    for i in call_info.argCount:
+        codeGen.append(str("    var a", call_info.argCount - i - 1, " = vm._pop()\n"))
+    codeGen.append("    ")
+
+    if not call_info.discard:
+        codeGen.append("var ret = ")
+
+    if is_method:
+        codeGen.append("me.")
+    codeGen.append(str(call_info.name, "("))
+
+    for i in call_info.argCount:
+        codeGen.append(str("a", i))
+        codeGen.append(", ")
+    if call_info.argCount > 0:
+        codeGen.pop_back()
+    codeGen.append(")\n")
+
+    if not call_info.discard:
+        codeGen.append("    vm._push(ret)\n")
+    codeGen.append("    vm.IP += 1\n\n")
+    return "".join(codeGen)
+    
+var bindlib
+
 func compile(code):
 	var tokens = lex.tokenize(code)
 	
@@ -54,12 +153,12 @@ func compile(code):
         var tok = tokens[t_idx]
         if tok.begins_with(">"):
             CODE.append(guts.OP_SET_MEMBER)
-            CODE.append(assoc_constant(tok.substr(1)))
+            CODE.append(tok.substr(1))
             t_idx+=1
         elif tok.begins_with(">>"):
             CODE.append_array([
                 guts.OP_U_PUSH, guts.OP_DUP, guts.OP_U_POP, # ab -- aab
-                guts.OP_SET_MEMBER, CODE.append(assoc_constant(tok.substr(1)))
+                guts.OP_SET_MEMBER, CODE.append(tok.substr(1))
             ])
             t_idx+=1
         elif tok.ends_with(")") or tok.ends_with(")!"):
@@ -100,35 +199,35 @@ func compile(code):
             t_idx += 1
         elif tok.begins_with("."):
             CODE.append(guts.OP_GET_MEMBER)
-            CODE.append(assoc_constant(tok.substr(1)))
+            CODE.append(tok.substr(1))
             t_idx+=1
         elif tok.begins_with('"'):
-            CODE.append_array([guts.OP_LIT, assoc_constant(tok.substr(1, len(tok)-2))])
+            CODE.append_array([guts.OP_LIT, tok.substr(1, len(tok)-2)])
             t_idx += 1
         elif tok.begins_with(":") and tok != ":" and tok != "::":
-            CODE.append_array([guts.OP_LIT, assoc_constant(tok.substr(1))])
+            CODE.append_array([guts.OP_LIT, tok.substr(1)])
             t_idx+=1
         elif tok.begins_with("~"):
-            CODE.append_array([guts.OP_WAIT, assoc_constant(tok.substr(1))])
+            CODE.append_array([guts.OP_WAIT, tok.substr(1)])
             t_idx+=1
         elif tok.begins_with("*") and tok != '*':
-            CODE.append_array([guts.OP_GETLOCAL, assoc_constant(tok.substr(1))])
+            CODE.append_array([guts.OP_GETLOCAL, tok.substr(1)])
             t_idx += 1
         elif tok.begins_with("%") and tok != '%':
             CODE.append_array([
-                guts.OP_GETLOCAL, assoc_constant(tok.substr(1)),
+                guts.OP_GETLOCAL, tok.substr(1),
                 guts.OP_SWAP, guts.OP_DO_BLOCK,
-                guts.OP_SETLOCAL, assoc_constant(tok.substr(1))
+                guts.OP_SETLOCAL, tok.substr(1)
             ])
             t_idx += 1
         elif tok.begins_with("="):
-            CODE.append_array([guts.OP_SETLOCAL, assoc_constant(tok.substr(1))])
+            CODE.append_array([guts.OP_SETLOCAL, tok.substr(1)])
             t_idx += 1
         elif tok == "shuf:":
             CODE.append_array([
                 guts.OP_SHUFFLE, 
-                assoc_constant(tokens[t_idx+1]), 
-                assoc_constant(tokens[t_idx+2]),
+                tokens[t_idx+1], 
+                tokens[t_idx+2],
             ])
             t_idx += 3
             
@@ -165,7 +264,7 @@ func compile(code):
             if tok in ["::", "evtl:"]:
                 CODE.append(guts.OP_DRguts.OP_SCOPE)
             CODE.append(guts.OP_RETURN)
-            CODE[dict[name]-1] = assoc_constant(len(CODE))
+            CODE[dict[name]-1] = len(CODE)
 
             t_idx = SEEK + 1
             
@@ -185,9 +284,9 @@ func compile(code):
             var slot_1 = len(CODE) - 2
             var slot_2 = len(CODE) - 1
             compile(tokens.slice(t_idx + 1, SEEK - 2))
-            CODE[slot_2] = assoc_constant(slot_2 + 1)
+            CODE[slot_2] = slot_2 + 1
             CODE.append(guts.OP_RETURN)
-            CODE[slot_1] = assoc_constant(len(CODE))
+            CODE[slot_1] = len(CODE)
             t_idx = SEEK 
         elif tok == "(":
             var SEEK = t_idx + 1;
@@ -202,10 +301,10 @@ func compile(code):
                 SEEK += 1
             t_idx = SEEK
         elif tok.is_valid_integer():
-            CODE.append_array([guts.OP_LIT, assoc_constant(int(tok))])
+            CODE.append_array([guts.OP_LIT, int(tok)])
             t_idx += 1
         elif tok.is_valid_float():
-            CODE.append_array([guts.OP_LIT, assoc_constant(float(tok))])
+            CODE.append_array([guts.OP_LIT, float(tok)])
             t_idx += 1
         elif tok in dict:
             if typeof(dict[tok]) == TYPE_ARRAY: 

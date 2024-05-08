@@ -157,14 +157,14 @@ var _comp_map = {
     "and": OP_AND,
     "or": OP_OR,
     "debug-binds": funcref(self, "dump_binds"),
-    "true": [OP_LIT, assoc_constant(true)],
-    "false": [OP_LIT, assoc_constant(false)],
-    "null": [OP_LIT, assoc_constant(null)],
-    "1+": [OP_LIT, assoc_constant(1), OP_ADD],
-    "1-": [OP_LIT, assoc_constant(1), OP_SUB],
+    "true": [OP_LIT, true],
+    "false": [OP_LIT, false],
+    "null": [OP_LIT, null],
+    "1+": [OP_LIT, 1, OP_ADD],
+    "1-": [OP_LIT, 1, OP_SUB],
     "eval": OP_EVAL,
     "if-else": OP_IF_ELSE,
-    "while": [OP_L_PUSH, OP_LIT, assoc_constant(true), OP_WHILE],
+    "while": [OP_L_PUSH, OP_LIT, true, OP_WHILE],
     "IF/WHILE": [OP_L_PUSH, OP_WHILE],
     "do-block": OP_DO_BLOCK,
     "throw": OP_THROW,
@@ -198,7 +198,7 @@ var _comp_map = {
 }
 
 func OP_LIT(vm):
-    vm._push(vm.constant_pool[vm.CODE[vm.IP+1]])
+    vm._push(vm.CODE[vm.IP+1])
     vm.IP += 2
 func OP_CALL(vm):
     vm._r_push(vm.IP+2)
@@ -267,7 +267,7 @@ func OP_WAIT(vm):
         vm.halt_fail()
         return
     var obj = vm._pop()
-    var sig = vm.constant_pool[vm.CODE[vm.IP+1]]
+    var sig = vm.CODE[vm.IP+1]
     if not obj.is_connected(sig, vm, "sig_resume"):
         if vm.trace > 0: vm.do_print("connecting")
         obj.connect(sig, vm, "sig_resume", [], CONNECT_ONESHOT | CONNECT_DEFERRED)
@@ -305,8 +305,8 @@ func OP_BECOME(vm):
 
 func OP_SHUFFLE(vm):
     var shuf_locals = {}
-    var input = vm.constant_pool[vm.CODE[vm.IP+1]]
-    var output = vm.constant_pool[vm.CODE[vm.IP+2]]
+    var input = vm.CODE[vm.IP+1]
+    var output = vm.CODE[vm.IP+2]
 
     for i in len(input):
         var idx = len(input) - i - 1
@@ -316,8 +316,8 @@ func OP_SHUFFLE(vm):
          vm._push(shuf_locals[c])
     vm.IP += 3
 func OP_BLOCK_LIT(vm):
-    vm._push(vm.constant_pool[vm.CODE[vm.IP+2]])
-    vm.IP = vm.constant_pool[vm.CODE[vm.IP+1]]
+    vm._push(vm.vm.CODE[vm.IP+2])
+    vm.IP = vm.CODE[vm.IP+1]
 func OP_RETURN(vm):
     vm.IP = vm._r_pop()
 func OP_DO_BLOCK(vm):
@@ -335,7 +335,7 @@ func OP_WHILE(vm):
         vm.IP += 1
 
 func OP_GET_MEMBER(vm):
-    vm._push(vm._pop().get(vm.constant_pool[vm.CODE[vm.IP+1]]))
+    vm._push(vm._pop().get(vm.CODE[vm.IP+1]))
     vm.IP += 2
 func OP_DEF(vm):
     var block = vm._pop()
@@ -345,7 +345,7 @@ func OP_DEF(vm):
 func OP_SET_MEMBER(vm):
     var to = vm._pop()
     var on = vm._pop()
-    on.set(vm.constant_pool[vm.CODE[vm.IP+1]], to)
+    on.set(vm.CODE[vm.IP+1], to)
     vm.IP += 2
 func OP_PUT(vm):
     var at = vm._pop()
@@ -415,7 +415,7 @@ func OP_IF_ELSE(vm):
 
 
 func OP_GOTO(vm):
-    vm.IP = vm.constant_pool[vm.CODE[vm.IP+1]]
+    vm.IP = vm.CODE[vm.IP+1]
 func OP_GOTO_WHEN_TRUE(vm):
     var JUMP = vm._pop()
     if vm._pop(): 
@@ -448,11 +448,11 @@ func OP_SET_SCOPE(vm):
     vm.locals = vm._pop()
     vm.IP += 1
 func OP_SETLOCAL(vm):
-    var local_key = vm.constant_pool[vm.CODE[vm.IP+1]]
+    var local_key = vm.CODE[vm.IP+1]
     vm.locals[local_key] = vm._pop()
     vm.IP += 2
 func OP_GETLOCAL(vm):
-    var local_key = vm.constant_pool[vm.CODE[vm.IP+1]]
+    var local_key = vm.CODE[vm.IP+1]
     vm._push(vm.locals[local_key])
     vm.IP += 2
 func OP_ADD(vm):
