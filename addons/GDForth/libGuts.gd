@@ -198,11 +198,11 @@ var _comp_map = {
 }
 
 func OP_LIT(vm):
-    vm._push(vm.CODE[vm.IP+1])
+    vm._push(vm.codeEnv.CODE[vm.IP+1])
     vm.IP += 2
 func OP_CALL(vm):
     vm._r_push(vm.IP+2)
-    vm.IP = vm.CODE[vm.IP+1]
+    vm.IP = vm.codeEnv.CODE[vm.IP+1]
 func OP_U_PUSH(vm):
     vm._u_push(vm._pop())
     vm.IP += 1
@@ -267,7 +267,7 @@ func OP_WAIT(vm):
         vm.halt_fail()
         return
     var obj = vm._pop()
-    var sig = vm.CODE[vm.IP+1]
+    var sig = vm.codeEnv.CODE[vm.IP+1]
     if not obj.is_connected(sig, vm, "sig_resume"):
         if vm.trace > 0: vm.do_print("connecting")
         obj.connect(sig, vm, "sig_resume", [], CONNECT_ONESHOT | CONNECT_DEFERRED)
@@ -305,8 +305,8 @@ func OP_BECOME(vm):
 
 func OP_SHUFFLE(vm):
     var shuf_locals = {}
-    var input = vm.CODE[vm.IP+1]
-    var output = vm.CODE[vm.IP+2]
+    var input = vm.codeEnv.CODE[vm.IP+1]
+    var output = vm.codeEnv.CODE[vm.IP+2]
 
     for i in len(input):
         var idx = len(input) - i - 1
@@ -315,11 +315,14 @@ func OP_SHUFFLE(vm):
     for c in output:
          vm._push(shuf_locals[c])
     vm.IP += 3
+
 func OP_BLOCK_LIT(vm):
-    vm._push(vm.vm.CODE[vm.IP+2])
-    vm.IP = vm.CODE[vm.IP+1]
+    vm._push(vm.vm.codeEnv.CODE[vm.IP+2])
+    vm.IP = vm.codeEnv.CODE[vm.IP+1]
+
 func OP_RETURN(vm):
     vm.IP = vm._r_pop()
+
 func OP_DO_BLOCK(vm):
     vm._r_push(IP+1)
     var lbl = vm._pop()
@@ -335,7 +338,7 @@ func OP_WHILE(vm):
         vm.IP += 1
 
 func OP_GET_MEMBER(vm):
-    vm._push(vm._pop().get(vm.CODE[vm.IP+1]))
+    vm._push(vm._pop().get(vm.codeEnv.CODE[vm.IP+1]))
     vm.IP += 2
 func OP_DEF(vm):
     var block = vm._pop()
@@ -345,14 +348,16 @@ func OP_DEF(vm):
 func OP_SET_MEMBER(vm):
     var to = vm._pop()
     var on = vm._pop()
-    on.set(vm.CODE[vm.IP+1], to)
+    on.set(vm.codeEnv.CODE[vm.IP+1], to)
     vm.IP += 2
+
 func OP_PUT(vm):
     var at = vm._pop()
     var on = vm._pop()
     var to = vm._pop()
     on[at] = to
     vm.IP += 1
+
 func OP_SELF(vm):
     vm._push(vm.instance)
     vm.IP += 1
@@ -415,7 +420,7 @@ func OP_IF_ELSE(vm):
 
 
 func OP_GOTO(vm):
-    vm.IP = vm.CODE[vm.IP+1]
+    vm.IP = vm.codeEnv.CODE[vm.IP+1]
 func OP_GOTO_WHEN_TRUE(vm):
     var JUMP = vm._pop()
     if vm._pop(): 
@@ -448,11 +453,11 @@ func OP_SET_SCOPE(vm):
     vm.locals = vm._pop()
     vm.IP += 1
 func OP_SETLOCAL(vm):
-    var local_key = vm.CODE[vm.IP+1]
+    var local_key = vm.codeEnv.CODE[vm.IP+1]
     vm.locals[local_key] = vm._pop()
     vm.IP += 2
 func OP_GETLOCAL(vm):
-    var local_key = vm.CODE[vm.IP+1]
+    var local_key = vm.codeEnv.CODE[vm.IP+1]
     vm._push(vm.locals[local_key])
     vm.IP += 2
 func OP_ADD(vm):

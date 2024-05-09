@@ -8,7 +8,6 @@ signal suspended
 signal do_print(item)
 signal do_error(err)
 
-
 var trace = 0; var trace_indent = false
 var IP = -1 
 var stack = []; 
@@ -20,8 +19,6 @@ var locals = {}
 var stop = true; var is_error = false
 var instance
 
-var dict = {}; 
-var evts = {};
 
 var in_exec = false
 var CODE = []
@@ -36,7 +33,6 @@ func _init():
     for p in get_property_list():
         if p.name.begins_with("OP_"):
             decode_table[get(p.name)] = p.name
-    CODE.append(OP_END_EVAL)
     eval(_stdlib)
 
 func halt_fail():
@@ -88,12 +84,6 @@ func _has_prefix(word, pre):
 
 const argNames = ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"]
 
-# TODO: Event select via bound params used for "select context"
-
-
-func comp(script):
-	pass
-
 func do(word, a0=null, a1=null, a2=null, a3=null, a4=null, a5=null, a6=null, a7=null, a8=null, a9=null):
     # print("do, IP at: ", IP)
     if not(word in dict):
@@ -126,9 +116,6 @@ func _eval_(script):
     IP = len(CODE)
     comp(script)
     exec()
-
-    
-
 
 func sig_resume(a0=null, a1=null, a2=null, a3=null, a4=null, a5=null, a6=null, a7=null, a8=null, a9=null):
     # print("SIG IP AT", IP)

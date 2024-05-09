@@ -21,6 +21,7 @@ func _init():
     for p in guts.get_property_list():
         if p.name.begins_with("OP_"):
             decode_table[get(p.name)] = p.name
+    CODE.append(guts.OP_END_EVAL)
 
 var decode_table = {}
 
