@@ -95,7 +95,9 @@ const _stdlib = """
 : nip swap drop ;
 : over shuf: ab aba ;
 : rot shuf: abc bca ;
+:  shuf: abc bca ;
 : -rot shuf: abc cab ;
+: bury shuf: abc cab ;
 : dup-under u< dup u> ;
 : if ( block -- quot/' ) [ ] if-else ;
 : ? ( c t f -- t/f ) rot [ drop ] [ nip ] if-else ;
@@ -113,6 +115,8 @@ const _stdlib = """
 : OK 0 ;
 : err! ( to-show -- ) VM .do_push_error(*)! ;
 : print-raw ( toprint -- ) VM .do_printraw(*)! ;
+: with! ( subj block -- ... ) swap u< do-block u> drop ;
+: with ( subj block -- ... ) swap u< do-block u> ;
 :: load ( path -- .. ) =path File.new() =f 
 	*path @File.READ *f .open(**) dup OK eq? [ drop *f .get_as_text() eval OK ] if ;
 
@@ -197,6 +201,7 @@ var OP_ADD = iota("OP_ADD")
 var OP_SUB = iota("OP_SUB")
 var OP_MUL = iota("OP_MUL")
 var OP_DIV = iota("OP_DIV")
+var OP_MOD = iota("OP_MOD")
 
 var OP_GT = iota("OP_GT")
 var OP_GE = iota("OP_GE")
@@ -391,7 +396,7 @@ func dump_binds(vm):
 	vm.IP += 1
 
 var _comp_map = {
-	"+": OP_ADD, "-": OP_SUB, "*": OP_MUL, "div": OP_DIV,
+	"+": OP_ADD, "-": OP_SUB, "*": OP_MUL, "div": OP_DIV, "mod": OP_MOD,
 	"lt?": OP_LT, "le?": OP_LE, "gt?": OP_GT, "ge?": OP_GE,
 	"eq?": OP_EQ,
 	"and": OP_AND,
@@ -1056,6 +1061,10 @@ func OP_MUL(vm):
 func OP_DIV(vm):
 	var b = vm._pop(); var a = _pop();
 	_push(a / b)
+	vm.IP += 1
+func OP_MOD(vm)
+	var b = vm._pop(); var a = _pop();
+	_push(a % b)
 	vm.IP += 1
 func OP_GT(vm):
 	var b = vm._pop(); var a = vm._pop();

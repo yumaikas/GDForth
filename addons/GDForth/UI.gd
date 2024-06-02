@@ -15,10 +15,10 @@ var listener_scripts = """
     : bye ( -- ) self .get_tree() .quit()! ;
     : null? ( -- ) null eq? ;
     : ls ( -- ) self .get_children() [ print ] each ;
-    :: cd ( to -- ) =path 
+    :: cd { path -- }
         *path self .get_node(*) =to
         *to null? not
-            [ *to VM .bind_instance(*) ] 
+            [ *to VM .bind_instance(*)! ] 
             [ "Error tried to switch invalid path" *path print(**)! ] 
         if-else
     ; 
