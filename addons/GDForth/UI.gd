@@ -19,7 +19,7 @@ var listener_scripts = """
         *path self .get_node(*) =to
         *to null? not
             [ *to VM .bind_instance(*) ] 
-            [ { :Error :tried :to :switch :invalid :path *path }: print ] 
+            [ "Error tried to switch invalid path" *path print(**)! ] 
         if-else
     ; 
     : to-canvas "/root/all/cols/canvas" cd ;
