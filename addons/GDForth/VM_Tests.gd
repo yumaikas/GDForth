@@ -112,7 +112,16 @@ func test_def(vm):
 func test_locals(vm):
     vm.eval(":: test 1 =a 2 =b *a *b + ;")
     vm.eval("test")
-    stack_assert(vm, [3], "locals work")
+    stack_assert(vm, [3], "locals work", true)
+    vm.eval(":: test2 1 2 3 { a b c -- this is a comment } *a *b *c + + ;")
+    vm.eval("test2")
+    stack_assert(vm, [6], "multi-locals work", true)
+
+func test_arrays(vm):
+    vm.eval("< 1 2 3 >")
+    stack_assert(vm, [[1,2,3]], "Array quotes work", true)
+    vm.eval("<>")
+    stack_assert(vm, [[]], "Empty array works", true)
 
 func test_cond(vm):
     vm.eval("true [ :true ] [ :false ] if-else")
@@ -137,7 +146,7 @@ func test_constants(vm):
     vm.eval("@File.READ")
     stack_assert(vm, [File.READ], "Global scope access works")
 
-const GDForth = preload("./GDForthAlpha.gd")
+# const GDForth = preload("./GDForthAlpha.gd")
 
 func test_loop(vm): 
     vm.eval(" 0 [ 1+ dup 10 lt? ] while")
@@ -216,19 +225,19 @@ func __ignore_test_bench_loop(vm):
         end = Time.get_ticks_usec()
         print("Each Loop took ", (end - start) / 1000.0, " msec")
 
-        var gdf = GDForth.new()
-        gdf.load_script("""
-            :bench [ 0 swap range [ drop 1 + ] each drop ] def-evt
-            :bench-while [ 0 [ 1 + dup 10000 lt? ] while drop ] def-evt
-        """)
-        start = Time.get_ticks_usec()
-        gdf.evt_call("bench-while", 10000)
-        end = Time.get_ticks_usec()
-        print("Alpha while took ", (end-start)/1000.0, " msec")
-        start = Time.get_ticks_usec()
-        gdf.evt_call("bench", 10000)
-        end = Time.get_ticks_usec()
-        print("Alpha Each took ", (end-start)/1000.0, " msec")
+#        var gdf = GDForth.new()
+#        gdf.load_script("""
+#            :bench [ 0 swap range [ drop 1 + ] each drop ] def-evt
+#            :bench-while [ 0 [ 1 + dup 10000 lt? ] while drop ] def-evt
+#        """)
+#        start = Time.get_ticks_usec()
+#        gdf.evt_call("bench-while", 10000)
+#        end = Time.get_ticks_usec()
+#        print("Alpha while took ", (end-start)/1000.0, " msec")
+#        start = Time.get_ticks_usec()
+#        gdf.evt_call("bench", 10000)
+#        end = Time.get_ticks_usec()
+#        print("Alpha Each took ", (end-start)/1000.0, " msec")
         print()
     
 func test_strings(vm):
@@ -243,8 +252,13 @@ func test_strings(vm):
     vm.eval('" "')
     stack_assert(vm, [" "], "spaces work", true)
 
-    vm.eval('{ :Foo " " :BAR "\t" :baz }:')
-    stack_assert(vm, ["Foo BAR\tbaz"], "}: works", true)
+    vm.eval('< :Foo " " :BAR "\t" :baz > str<>')
+    stack_assert(vm, ["Foo BAR\tbaz"], "can join strings", true)
+
+func test_become(vm):
+    vm.eval(": state1 + + ;")
+    vm.eval(":state1 < 1 2 3 > become")
+    stack_assert(vm, [6], "", true)
 
 func _ignore_test_classdb(vm):
     vm.eval("class-db &get_class_list() [ print ] each")
