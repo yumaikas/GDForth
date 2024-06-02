@@ -46,8 +46,8 @@ If you're familiar with Forth or a concatenative language, that'll help you unde
 ```forth 
 ( -- Comments -- )
 
-( GDForth currently only has `( parens for comments )`. I'll be using comments after expressions
-to indicate the contents of the stack. )
+( GDForth currently only has parens for comments. )
+( I'll be using comments after expressions to indicate the contents of the stack. )
 
 ( ---- Basic values ---- )
 
@@ -117,7 +117,7 @@ to indicate the contents of the stack. )
 
     false [ "This should not print" print ] [ "This -should- print" print ] if-else
 
-( If all you need to do is repeat something, `times` hsa you covered )
+( If all you need to do is repeat something, `times` has you covered )
 
 40 [ "I will not abuse loops" print ] times
 
@@ -146,8 +146,8 @@ to indicate the contents of the stack. )
 ( BEGIN TECHNICAL DETAILS ABOUT BLOCKS BELOW )
 
 ( Digging under the hood a little, `[` is compiled into a jump to its matching `]`, and then it )
-( puts the address (aka index in the code array) of the code right after it on the stack. )
-( `]`, then, is just a `return` after the compile pass which takes you back to the 
+( puts the address, aka, the index in the code array, of the code right after it on the stack. )
+( `]`, then, is just a `return` after the compile pass which takes you back to the )
 ( code where you left off. )
 ( this -does- mean you could manipulate the addresses left on the stack, but probably best to not )
 ( until you're ready to ignore any warnings I'd give on the matter )
@@ -190,11 +190,11 @@ to indicate the contents of the stack. )
 
     dict ( stack: {} ) drop
 
-( use `put ( v obj k -- )` to put values in )
+( use `put` { v obj k -- }` to put values in )
 
     dict dup 1 swap :a put ( stack: {a:1} )  
 
-( and `get ( obj k -- v )` to get values out )
+( and `get { obj k -- v }` to get values out )
 
     dup :a get ( stack: {a:1} 1 )
     drop drop
@@ -207,7 +207,7 @@ to indicate the contents of the stack. )
 ( This pattern, of pushing something on to the util stack, working with it, and then move it back )
 ( to the value stack is handy enough it has a factoring: )
 
-: with ( it block -- .. it ) swap u< do-block u> ;
+    : with ( it block -- .. it ) swap u< do-block u> ;
 
     dict [ 1 it :a put ] with ( stack: {a:1} ) drop
 
@@ -215,14 +215,14 @@ to indicate the contents of the stack. )
 
     dict [ 1 it >a ] with ( stack: {a:1} ) 
 
-( `.key` exists as a prefix word that compiles down to `push(TOS.key)`. )
+( `.key` exists as a prefix word that compiles down to pushing TOS.key to the top of the stack. )
 
     dup .a ( stack: {a:1} 1 ) drop drop
 
 ( Then, going a bit further, the GDForth compiler supports a few prefix/suffix patterns that )
 ( assuming a meaningful `it` value. )
-
-(>>key compiles to `it >key` )
+ 
+( >>key compiles to `it >key` ) 
 
     dict [ 1 >>a ] with ( stack: {a:1} )
 
