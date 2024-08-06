@@ -63,4 +63,4 @@ For more details, check out GUIDE.md. UI.gd and CLI.gd have example code.
 
 ## Langauge Guide
 
-For more details asbout GDForth itself, check out [the guide](addons/GDForth/GUIDE.md)
+For more details asbout GDForth itself, check out [the guide](./GUIDE.md)
