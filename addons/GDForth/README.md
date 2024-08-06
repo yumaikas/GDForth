@@ -59,3 +59,8 @@ func _on_click(evt):
 
 
 For more details, check out GUIDE.md. UI.gd and CLI.gd have example code.
+```
+
+## Langauge Guide
+
+For more details asbout GDForth itself, check out [the guide](addons/GDForth/GUIDE.md)
